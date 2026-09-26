@@ -42,7 +42,7 @@ function Login() {
 
   return (
     <div className="glass-card">
-      <h2>🙏 Welcome Back</h2>
+      <h2>| Welcome Back</h2>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label>Mobile Number</label>
@@ -57,23 +57,22 @@ function Login() {
 
         <div className="form-group">
           <label>Password</label>
-          <input
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            required
-          />
-        </div>
-
-        <div className="show-password-toggle">
-          <input
-            type="checkbox"
-            id="showPassLogin"
-            checked={showPassword}
-            onChange={() => setShowPassword(!showPassword)}
-          />
-          <label htmlFor="showPassLogin">Show password</label>
+          <div className="password-field">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              required
+            />
+            <button
+              type="button"
+              className="password-toggle-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+          </div>
         </div>
 
         {error && <p className="error-text">{error}</p>}

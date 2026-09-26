@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import SearchableSelect from "../components/SearchableSelect";
 
 const API_BASE = "https://khedutmitra-backend.onrender.com";
 
@@ -102,13 +103,13 @@ function Register() {
         </div>
 
         <div className="form-group">
-          <label>District</label>
-          <select value={district} onChange={(e) => setDistrict(e.target.value)} required>
-            <option value="">Select your district</option>
-            {DISTRICTS.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+            <label>District</label>
+            <SearchableSelect
+                options={DISTRICTS}
+                value={district}
+                onChange={setDistrict}
+                placeholder="Select your district"
+            />
         </div>
 
         <div className="form-group">
@@ -121,6 +122,13 @@ function Register() {
               placeholder="At least 6 characters"
               required
             />
+            <button
+              type="button"
+              className="password-toggle-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
           </div>
         </div>
 
@@ -135,16 +143,6 @@ function Register() {
               required
             />
           </div>
-        </div>
-
-        <div className="show-password-toggle">
-          <input
-            type="checkbox"
-            id="showPass"
-            checked={showPassword}
-            onChange={() => setShowPassword(!showPassword)}
-          />
-          <label htmlFor="showPass">Show password</label>
         </div>
 
         {error && <p className="error-text">{error}</p>}

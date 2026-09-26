@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import SearchableSelect from "../components/SearchableSelect";
 
 const API_BASE = "https://khedutmitra-backend.onrender.com";
 
@@ -10,6 +11,7 @@ function Dashboard() {
 
   const [crops, setCrops] = useState([]);
   const [selectedCrop, setSelectedCrop] = useState("Wheat");
+  const [granularity, setGranularity] = useState("daily");
   const [priceHistory, setPriceHistory] = useState([]);
   const [forecast, setForecast] = useState(null);
   const [harvestInfo, setHarvestInfo] = useState(null);
@@ -25,7 +27,7 @@ function Dashboard() {
   useEffect(() => {
     setLoading(true);
 
-    fetch(`${API_BASE}/prices/${selectedCrop}?limit=60`)
+    fetch(`${API_BASE}/prices-aggregated/${selectedCrop}?granularity=${granularity}`)
       .then((res) => res.json())
       .then((data) => setPriceHistory(data.data))
       .catch(() => setPriceHistory([]));
@@ -45,7 +47,7 @@ function Dashboard() {
         setHarvestInfo(null);
         setLoading(false);
       });
-  }, [selectedCrop]);
+  }, [selectedCrop, granularity]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -55,29 +57,46 @@ function Dashboard() {
   return (
     <div>
       <div className="dashboard-topbar">
-        <h2>🌾 KhedutMitra</h2>
-        <div>
-          <span style={{ marginRight: "15px" }}>Namaste, {currentUser?.name || "Farmer"}</span>
+        <h2 onClick={() => navigate("/")} style={{ cursor: "pointer" }}>🌾 KhedutMitra</h2>
+        <div className="topbar-right">
+          <span className="greeting">Namaste, {currentUser?.name || "Farmer"}</span>
           <button className="btn-logout" onClick={handleLogout}>Logout</button>
         </div>
       </div>
 
       <div className="dashboard-container">
         <div className="crop-selector">
-          <label>Select Crop: </label>
-          <select value={selectedCrop} onChange={(e) => setSelectedCrop(e.target.value)}>
-            {crops.map((crop) => (
-              <option key={crop} value={crop}>{crop}</option>
-            ))}
-          </select>
+          <label>🌾 Select Crop:</label>
+          <div style={{ flex: 1, maxWidth: "240px" }}>
+            <SearchableSelect
+              options={crops}
+              value={selectedCrop}
+              onChange={setSelectedCrop}
+              placeholder="Select a crop"
+            />
+          </div>
         </div>
 
         {loading ? (
-          <p style={{ color: "white" }}>Loading data for {selectedCrop}...</p>
+          <p className="loading-text">Loading data for {selectedCrop}...</p>
         ) : (
           <>
             <div className="card">
-              <h2>Price History (Last 60 Days) - {selectedCrop}</h2>
+              <div className="chart-header-row">
+                <h2 className="no-border">📊 Price History - {selectedCrop}</h2>
+                <div className="granularity-toggle">
+                  {["daily", "monthly", "yearly"].map((g) => (
+                    <button
+                      key={g}
+                      className={`granularity-btn ${granularity === g ? "active" : ""}`}
+                      onClick={() => setGranularity(g)}
+                    >
+                      {g.charAt(0).toUpperCase() + g.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <hr className="chart-divider" />
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={priceHistory}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -85,7 +104,7 @@ function Dashboard() {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="price" stroke="#2e7d32" name="Price (Rs./Quintal)" />
+                  <Line type="monotone" dataKey="price" stroke="#2F5233" strokeWidth={2.5} name="Price (Rs./Quintal)" dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -93,19 +112,39 @@ function Dashboard() {
             {forecast && !forecast.detail && (
               <div className="card">
                 <h2>Next Week Forecast</h2>
-                <p>Current Price: <strong>Rs. {forecast.current_price}</strong></p>
-                <p>Predicted Next Week: <strong>Rs. {forecast.predicted_next_week_price}</strong></p>
+                <div className="forecast-stats">
+                  <div className="stat-box">
+                    <div className="stat-label">Current Price</div>
+                    <div className="stat-value">₹{forecast.current_price}</div>
+                  </div>
+                  <div className={`stat-box ${forecast.predicted_next_week_price > forecast.current_price ? "trend-up" : "trend-down"}`}>
+                    <div className="stat-label">Predicted Next Week</div>
+                    <div className="stat-value">₹{forecast.predicted_next_week_price}</div>
+                  </div>
+                </div>
               </div>
             )}
 
             {harvestInfo && !harvestInfo.detail && (
               <div className="card">
                 <h2>Harvest & Market Advice</h2>
-                <p><strong>Season:</strong> {harvestInfo.season}</p>
-                <p><strong>Typical Sowing Months:</strong> {harvestInfo.typical_sowing_months}</p>
-                <p><strong>Typical Harvest Months:</strong> {harvestInfo.typical_harvest_months}</p>
+                <div className="info-row">
+                  <span className="label">Season</span>
+                  <span className="value">{harvestInfo.season}</span>
+                </div>
+                <div className="info-row">
+                  <span className="label">Typical Sowing Months</span>
+                  <span className="value">{harvestInfo.typical_sowing_months}</span>
+                </div>
+                <div className="info-row">
+                  <span className="label">Typical Harvest Months</span>
+                  <span className="value">{harvestInfo.typical_harvest_months}</span>
+                </div>
                 {harvestInfo.best_mandi && (
-                  <p><strong>Best Mandi Right Now:</strong> {harvestInfo.best_mandi.best_market} (avg Rs. {harvestInfo.best_mandi.best_avg_price})</p>
+                  <div className="info-row">
+                    <span className="label">Best Mandi Right Now</span>
+                    <span className="value">{harvestInfo.best_mandi.best_market} (₹{harvestInfo.best_mandi.best_avg_price})</span>
+                  </div>
                 )}
                 <p className="advice">{harvestInfo.advice}</p>
               </div>

@@ -96,6 +96,49 @@ def get_price_history(commodity: str, market: str = None, limit: int = 90):
     return {"commodity": commodity, "market": market or "all", "data": records}
 
 
+@app.get("/prices-aggregated/{commodity}")
+def get_aggregated_prices(commodity: str, granularity: str = "daily", market: str = None):
+    """
+    Returns price history aggregated by day, month, or year.
+    granularity can be: 'daily', 'monthly', or 'yearly'
+    """
+    crop_df = df[df["commodity"].str.lower() == commodity.lower()].copy()
+
+    if crop_df.empty:
+        raise HTTPException(status_code=404, detail=f"No data found for crop: {commodity}")
+
+    if market:
+        crop_df = crop_df[crop_df["market"].str.lower() == market.lower()]
+
+    crop_df = crop_df.set_index("date")
+
+    # Pick the resampling rule based on what the user asked for
+    if granularity == "yearly":
+        resample_rule = "YE"
+        date_format = "%Y"
+    elif granularity == "monthly":
+        resample_rule = "ME"
+        date_format = "%Y-%m"
+    else:  # daily is the default
+        resample_rule = "D"
+        date_format = "%Y-%m-%d"
+
+    aggregated = crop_df.resample(resample_rule).agg(
+        price=("modal_price", "mean"),
+        arrivals=("arrival_quantity", "sum")
+    ).dropna().reset_index()
+
+    aggregated["date"] = aggregated["date"].dt.strftime(date_format)
+
+    # For daily view, only send the most recent 90 points so the chart stays readable
+    if granularity == "daily":
+        aggregated = aggregated.tail(90)
+
+    records = aggregated.to_dict(orient="records")
+
+    return {"commodity": commodity, "granularity": granularity, "data": records}
+
+
 @app.get("/forecast/price/{commodity}")
 def get_price_forecast(commodity: str):
     """
