@@ -4,7 +4,21 @@ import pandas as pd
 import joblib
 import os
 
+from backend.app.auth import register_user, login_user
+from pydantic import BaseModel
+
 from ml_pipeline.harvest_and_mandi import get_harvest_recommendation, get_best_mandi
+
+
+# These define what data we expect farmers to send when registering/logging in
+class RegisterRequest(BaseModel):
+    name: str
+    mobile_number: str
+    password: str
+    district: str
+class LoginRequest(BaseModel):
+    mobile_number: str
+    password: str
 
 # Create the FastAPI app - this is the "server" object everything attaches to
 app = FastAPI(title="KhedutMitra API")
@@ -152,3 +166,20 @@ def best_mandi(commodity: str):
     if result is None:
         raise HTTPException(status_code=404, detail=f"No mandi data found for {commodity}")
     return {"commodity": commodity, **result}
+
+@app.post("/auth/register")
+def register(data: RegisterRequest):
+    """Create a new farmer account."""
+    result = register_user(data.name, data.mobile_number, data.password, data.district)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.post("/auth/login")
+def login(data: LoginRequest):
+    """Log in an existing farmer."""
+    result = login_user(data.mobile_number, data.password)
+    if not result["success"]:
+        raise HTTPException(status_code=401, detail=result["error"])
+    return result
