@@ -1,0 +1,12 @@
+pandas
+numpy
+scikit-learn
+requests
+pyarrow
+great_expectations
+matplotlib
+seaborn
+python-dotenv
+fastapi
+uvicorn
+pymongo

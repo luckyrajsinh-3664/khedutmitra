@@ -1,0 +1,10 @@
+commodity,best_model,MAE,RMSE,MAPE
+Bajra,Linear Regression,55.56,74.37,2.17
+Castor Seed,Baseline (Last Week's Price),81.28,115.19,1.21
+Chickpea,Linear Regression,156.78,208.55,2.88
+Cotton,Linear Regression,158.12,208.61,2.26
+Cumin,Baseline (Last Week's Price),338.85,473.12,1.75
+Groundnut,Baseline (Last Week's Price),115.45,141.09,1.83
+Mustard,Linear Regression,526.87,720.32,7.74
+Sesame,Random Forest,772.16,938.25,9.59
+Wheat,Linear Regression,30.64,39.22,1.16

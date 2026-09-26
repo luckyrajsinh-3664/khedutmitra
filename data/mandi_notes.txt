@@ -1,0 +1,27 @@
+KHEDUTMITRA - DATA SOURCE NOTES
+=================================
+Source: Agmarknet.gov.in (Government of India, Ministry of Agriculture)
+Report type: All Type of Report (All Grades) - Market Wise, Date Wise
+Date range: 01-Jan-2021 to 24-Sep-2026
+Data fields: State, District, Market, Commodity Group, Commodity, Date, Arrival Quantity, Arrival Unit, Modal Price, Price Unit
+
+CROP-WISE DATA COLLECTED:
+1. Groundnut   - Rajkot district        - file: groundnut_rajkot_district_2021_2026.csv
+2. Cotton      - Surendranagar district - file: cotton_surendranagar_district_2021_2026.csv
+3. Sesame      - Patan district         - file: sesame_patan_district_2021_2026.csv
+4. Wheat       - Sabarkantha district   - file: wheat_sabarkantha_district_2021_2026.csv
+5. Pearl Millet (Bajra) - Patan district - file: bajra_patan_district_2021_2026.csv
+6. Castor Seed - Banaskantha district   - file: castor_banaskantha_district_2021_2026.csv
+7. Chickpea    - Botad district         - file: chickpea_botad_district_2021_2026.csv
+8. Cumin       - Mehsana district       - file: cumin_mehsana_district_2021_2026.csv
+9. Mustard (replaced Fennel) - Surendranagar district - file: mustard_surendranagar_district_2021_2026.csv
+
+NOTE: Each district-level file contains multiple mandis/APMCs (typically 3-6+ 
+markets per district) reporting for that commodity, not just one market.
+The exact list of markets per crop is derived directly from the 'Market' 
+column within each CSV file during data cleaning.
+
+NOTE ON MUSTARD: Fennel seed was originally planned but was not available 
+at mandi-level granularity for any tested Gujarat district on Agmarknet. 
+Mustard was substituted as it is a genuinely traded Gujarat oilseed crop 
+with available historical data.

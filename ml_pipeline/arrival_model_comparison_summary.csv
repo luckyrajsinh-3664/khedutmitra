@@ -1,0 +1,10 @@
+commodity,best_model,MAE,RMSE,MAPE
+Bajra,Random Forest,48.97,77.42,45.31
+Castor Seed,Linear Regression,884.65,1669.57,47.78
+Chickpea,Baseline (Last Week's Arrivals),317.7,766.95,89.63
+Cotton,Baseline (Last Week's Arrivals),204.64,425.3,77.69
+Cumin,Random Forest,908.43,1365.45,23.29
+Groundnut,Random Forest,959.69,1459.78,66.07
+Mustard,Random Forest,60.43,121.63,179.81
+Sesame,Random Forest,1.0,1.48,117.57
+Wheat,Baseline (Last Week's Arrivals),429.39,849.8,46.22
