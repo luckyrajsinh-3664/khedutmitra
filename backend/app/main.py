@@ -88,6 +88,10 @@ def get_price_history(commodity: str, market: str = None, limit: int = 90):
 
     daily = daily.sort_values("date").tail(limit)
 
+    # Round to 2 decimal places so the frontend doesn't show long messy numbers
+    daily["price"] = daily["price"].round(2)
+    daily["arrivals"] = daily["arrivals"].round(2)
+
     # Convert to a simple list of records that's easy for the frontend to use
     records = daily.to_dict(orient="records")
     for r in records:
@@ -127,6 +131,10 @@ def get_aggregated_prices(commodity: str, granularity: str = "daily", market: st
         price=("modal_price", "mean"),
         arrivals=("arrival_quantity", "sum")
     ).dropna().reset_index()
+
+    # Round to 2 decimal places so the frontend doesn't show long messy numbers
+    aggregated["price"] = aggregated["price"].round(2)
+    aggregated["arrivals"] = aggregated["arrivals"].round(2)
 
     aggregated["date"] = aggregated["date"].dt.strftime(date_format)
 

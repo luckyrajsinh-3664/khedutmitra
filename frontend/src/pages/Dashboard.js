@@ -102,7 +102,7 @@ function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                   <YAxis />
-                  <Tooltip />
+                  <Tooltip formatter={(value) => value.toFixed(2)} />
                   <Legend />
                   <Line type="monotone" dataKey="price" stroke="#2F5233" strokeWidth={2.5} name="Price (Rs./Quintal)" dot={false} />
                 </LineChart>
@@ -115,11 +115,11 @@ function Dashboard() {
                 <div className="forecast-stats">
                   <div className="stat-box">
                     <div className="stat-label">Current Price</div>
-                    <div className="stat-value">₹{forecast.current_price}</div>
+                    <div className="stat-value">₹{forecast.current_price.toFixed(2)}</div>
                   </div>
                   <div className={`stat-box ${forecast.predicted_next_week_price > forecast.current_price ? "trend-up" : "trend-down"}`}>
                     <div className="stat-label">Predicted Next Week</div>
-                    <div className="stat-value">₹{forecast.predicted_next_week_price}</div>
+                    <div className="stat-value">₹{forecast.predicted_next_week_price.toFixed(2)}</div>
                   </div>
                 </div>
               </div>
@@ -143,7 +143,7 @@ function Dashboard() {
                 {harvestInfo.best_mandi && (
                   <div className="info-row">
                     <span className="label">Best Mandi Right Now</span>
-                    <span className="value">{harvestInfo.best_mandi.best_market} (₹{harvestInfo.best_mandi.best_avg_price})</span>
+                    <span className="value">{harvestInfo.best_mandi.best_market} (₹{harvestInfo.best_mandi.best_avg_price.toFixed(2)})</span>
                   </div>
                 )}
                 <p className="advice">{harvestInfo.advice}</p>
