@@ -43,10 +43,11 @@ WET_DAY_MM = 5.0         # noticeable rain: drying and field work are disturbed
 HEAVY_TOTAL_MM = 30.0    # 7-day total that makes harvesting risky
 
 # ---- Simple in-memory cache: one API call per district per hour ----
-# (the free Render server is slow, and many users would otherwise trigger
-#  the same API call again and again)
 CACHE_SECONDS = 3600
 _cache = {}  # district -> (time fetched, result)
+
+# Identify ourselves politely to the free API (shared cloud IPs are often limited)
+HEADERS = {"User-Agent": "KhedutMitra/1.0 (PDEU student project)"}
 
 
 def _fetch_district_forecast(district):
@@ -59,7 +60,13 @@ def _fetch_district_forecast(district):
         "forecast_days": 7,
         "timezone": "Asia/Kolkata",   # days follow the Indian calendar
     }
-    response = requests.get(FORECAST_URL, params=params, timeout=15)
+    response = requests.get(FORECAST_URL, params=params, headers=HEADERS, timeout=15)
+
+    # Rate-limited or temporary server error: wait briefly and try once more
+    if response.status_code == 429 or response.status_code >= 500:
+        time.sleep(2)
+        response = requests.get(FORECAST_URL, params=params, headers=HEADERS, timeout=15)
+
     response.raise_for_status()
     return response.json()["daily"]
 
@@ -126,8 +133,16 @@ def get_weather_outlook(commodity):
     try:
         result = _summarise(district, _fetch_district_forecast(district))
     except Exception as err:   # network error, API down, unexpected format ...
+        # Say WHY it failed: HTTP status code if there is one, else the error type
+        status = getattr(getattr(err, "response", None), "status_code", None)
+        reason = f"HTTP {status}" if status else type(err).__name__
+        print(f"[weather] fetch failed for {district}: {reason} - {err}")   # shows in Render logs
+
+        # If we have an older forecast, a slightly old one beats none
+        if cached:
+            return {**cached[1], "stale": True}
         return {"available": False, "district": district,
-                "message": f"Weather forecast is temporarily unavailable ({type(err).__name__})."}
+                "message": f"Weather forecast is temporarily unavailable ({reason})."}
 
     _cache[district] = (time.time(), result)
     return result
