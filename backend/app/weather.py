@@ -1,18 +1,27 @@
 """
 weather.py
-Fetches the next 7 days of weather for a crop's district from the free
-Open-Meteo FORECAST API (no API key) and turns it into a simple rain-risk
-summary for harvest advice.
+Gives the 7-day rain outlook for a crop's district and turns it into a simple
+rain-risk summary for harvest advice.
+
+DATA SOURCE: data/processed/forecast.json, refreshed every 6 hours by a GitHub
+Action (ml_pipeline/update_forecast.py). We do NOT call Open-Meteo from the
+Render server by default, because Open-Meteo rate-limits Render's shared IP
+(HTTP 429). A live call is only a fallback if the file is missing or too old.
 
 Rule-based safety check, not an ML model: it does not change forecast accuracy,
 it makes the harvest advice safer.
 """
 
+import json
+import os
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+FORECAST_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "processed", "forecast.json")
+MAX_FILE_AGE_HOURS = 24      # older than this -> try a live call instead
 
 # Same crop -> district mapping and district coordinates as the weather data fetch
 CROP_DISTRICT = {
@@ -42,33 +51,48 @@ HEAVY_DAY_MM = 15.0      # a day with this much rain can ruin standing/drying cr
 WET_DAY_MM = 5.0         # noticeable rain: drying and field work are disturbed
 HEAVY_TOTAL_MM = 30.0    # 7-day total that makes harvesting risky
 
-# ---- Simple in-memory cache: one API call per district per hour ----
+# Identify ourselves politely to the free API
+HEADERS = {"User-Agent": "KhedutMitra/1.0 (PDEU student project)"}
+
+# Small in-memory cache for the live-call fallback only
 CACHE_SECONDS = 3600
 _cache = {}  # district -> (time fetched, result)
 
-# Identify ourselves politely to the free API (shared cloud IPs are often limited)
-HEADERS = {"User-Agent": "KhedutMitra/1.0 (PDEU student project)"}
 
-
-def _fetch_district_forecast(district):
-    """Call Open-Meteo for one district; return the raw 'daily' dictionary."""
+def _fetch_live(district):
+    """Fallback: call Open-Meteo directly for one district; return the raw 'daily' dictionary."""
     lat, lon = DISTRICT_COORDS[district]
     params = {
         "latitude": lat,
         "longitude": lon,
         "daily": "precipitation_sum,precipitation_probability_max,temperature_2m_max",
         "forecast_days": 7,
-        "timezone": "Asia/Kolkata",   # days follow the Indian calendar
+        "timezone": "Asia/Kolkata",
     }
     response = requests.get(FORECAST_URL, params=params, headers=HEADERS, timeout=15)
-
-    # Rate-limited or temporary server error: wait briefly and try once more
-    if response.status_code == 429 or response.status_code >= 500:
-        time.sleep(2)
-        response = requests.get(FORECAST_URL, params=params, headers=HEADERS, timeout=15)
-
     response.raise_for_status()
     return response.json()["daily"]
+
+
+def _read_file(district):
+    """
+    Read this district's forecast from forecast.json.
+    Returns (daily, updated_at) or None if the file is missing, unreadable or too old.
+    """
+    try:
+        with open(FORECAST_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        daily = data["districts"][district]
+
+        # how old is the file? (updated_at looks like "2026-10-14 21:30 IST")
+        stamp = datetime.strptime(data["updated_at"], "%Y-%m-%d %H:%M IST")
+        stamp = stamp.replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
+        age = datetime.now(timezone.utc) - stamp
+        if age > timedelta(hours=MAX_FILE_AGE_HOURS):
+            return None
+        return daily, data["updated_at"]
+    except Exception:
+        return None
 
 
 def _summarise(district, daily):
@@ -125,22 +149,28 @@ def get_weather_outlook(commodity):
     if district is None:
         return {"available": False, "message": f"No weather location configured for {commodity}."}
 
-    # serve from cache if fetched less than an hour ago
+    # 1) Normal path: the file refreshed by the GitHub Action
+    from_file = _read_file(district)
+    if from_file:
+        daily, updated_at = from_file
+        try:
+            result = _summarise(district, daily)
+            result["updated_at"] = updated_at
+            return result
+        except Exception as err:
+            print(f"[weather] bad data in forecast.json for {district}: {err}")
+
+    # 2) Fallback: live call (cached for an hour)
     cached = _cache.get(district)
     if cached and time.time() - cached[0] < CACHE_SECONDS:
         return cached[1]
 
     try:
-        result = _summarise(district, _fetch_district_forecast(district))
-    except Exception as err:   # network error, API down, unexpected format ...
-        # Say WHY it failed: HTTP status code if there is one, else the error type
+        result = _summarise(district, _fetch_live(district))
+    except Exception as err:
         status = getattr(getattr(err, "response", None), "status_code", None)
         reason = f"HTTP {status}" if status else type(err).__name__
-        print(f"[weather] fetch failed for {district}: {reason} - {err}")   # shows in Render logs
-
-        # If we have an older forecast, a slightly old one beats none
-        if cached:
-            return {**cached[1], "stale": True}
+        print(f"[weather] live fetch failed for {district}: {reason} - {err}")
         return {"available": False, "district": district,
                 "message": f"Weather forecast is temporarily unavailable ({reason})."}
 
@@ -153,7 +183,7 @@ if __name__ == "__main__":
     for crop in ["Groundnut", "Cumin", "Wheat"]:
         out = get_weather_outlook(crop)
         print(f"\n{crop}: {out.get('district')} -> risk={out.get('risk')}, "
-              f"7-day rain={out.get('total_rain_mm')} mm")
+              f"7-day rain={out.get('total_rain_mm')} mm, updated {out.get('updated_at')}")
         print("  ", out["message"])
         for d in out.get("daily", []):
             print(f"   {d['date']}  rain {d['rain_mm']:>5} mm  chance {d['rain_chance_pct']:>3}%  max {d['temp_max']} C")

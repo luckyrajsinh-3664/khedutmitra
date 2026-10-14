@@ -1,0 +1,32 @@
+name: Update weather forecast
+
+on:
+  schedule:
+    - cron: "30 */6 * * *"     # every 6 hours (UTC)
+  workflow_dispatch:            # lets you also run it by hand from the Actions tab
+
+permissions:
+  contents: write               # needed so the job can commit forecast.json
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Fetch forecast
+        run: python ml_pipeline/update_forecast.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "forecast-bot"
+          git config user.email "forecast-bot@users.noreply.github.com"
+          git add data/processed/forecast.json
+          git diff --cached --quiet || (git commit -m "Update weather forecast [skip ci]" && git push)
