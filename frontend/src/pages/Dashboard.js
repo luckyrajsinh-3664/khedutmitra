@@ -5,6 +5,36 @@ import SearchableSelect from "../components/SearchableSelect";
 
 const API_BASE = "https://khedutmitra-backend.onrender.com";
 
+// Colours and labels for the rain-risk levels returned by /weather/{crop}
+const RISK_STYLES = {
+  low:      { bg: "#E8F3E6", border: "#2F5233", label: "Low rain risk" },
+  moderate: { bg: "#FFF3DC", border: "#E0A030", label: "Moderate rain risk" },
+  high:     { bg: "#FBE4E1", border: "#C0392B", label: "High rain risk" },
+};
+
+// "2026-09-27" -> "27 Sep 2026"
+function formatDate(iso) {
+  if (!iso) return "";
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", {
+    day: "numeric", month: "short", year: "numeric",
+  });
+}
+
+// "2026-10-14" -> "Wed, 14 Oct"
+function formatDay(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", {
+    weekday: "short", day: "numeric", month: "short",
+  });
+}
+
+// A small icon for each day, based on how much rain is expected
+function rainIcon(mm) {
+  if (mm >= 15) return "⛈️";
+  if (mm >= 5) return "🌧️";
+  if (mm > 0.5) return "🌦️";
+  return "☀️";
+}
+
 function Dashboard() {
   const navigate = useNavigate();
   const currentUser = JSON.parse(localStorage.getItem("currentUser"));
@@ -15,6 +45,7 @@ function Dashboard() {
   const [priceHistory, setPriceHistory] = useState([]);
   const [forecast, setForecast] = useState(null);
   const [harvestInfo, setHarvestInfo] = useState(null);
+  const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,34 +56,62 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
+    // "cancelled" stops a slow, old response from overwriting the data of a
+    // crop the user has already switched away from
+    let cancelled = false;
     setLoading(true);
+    setWeather(null);
 
     fetch(`${API_BASE}/prices-aggregated/${selectedCrop}?granularity=${granularity}`)
       .then((res) => res.json())
-      .then((data) => setPriceHistory(data.data))
-      .catch(() => setPriceHistory([]));
+      .then((data) => { if (!cancelled) setPriceHistory(data.data); })
+      .catch(() => { if (!cancelled) setPriceHistory([]); });
 
     fetch(`${API_BASE}/forecast/price/${selectedCrop}`)
       .then((res) => res.json())
-      .then((data) => setForecast(data))
-      .catch(() => setForecast(null));
+      .then((data) => { if (!cancelled) setForecast(data); })
+      .catch(() => { if (!cancelled) setForecast(null); });
+
+    // Weather loads separately, so a slow weather call never blocks the page
+    fetch(`${API_BASE}/weather/${selectedCrop}`)
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled) setWeather(data); })
+      .catch(() => { if (!cancelled) setWeather(null); });
 
     fetch(`${API_BASE}/harvest-window/${selectedCrop}`)
       .then((res) => res.json())
       .then((data) => {
+        if (cancelled) return;
         setHarvestInfo(data);
         setLoading(false);
       })
       .catch(() => {
+        if (cancelled) return;
         setHarvestInfo(null);
         setLoading(false);
       });
+
+    return () => { cancelled = true; };
   }, [selectedCrop, granularity]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
+
+  // Forecast card colour: green only if rising by more than 1%, red only if
+  // falling by more than 1%, otherwise neutral (same 1% rule as the backend)
+  let trendClass = "";
+  if (forecast && !forecast.detail) {
+    const change =
+      forecast.change_percent !== undefined
+        ? forecast.change_percent
+        : ((forecast.predicted_next_week_price - forecast.current_price) / forecast.current_price) * 100;
+    if (change > 1) trendClass = "trend-up";
+    else if (change < -1) trendClass = "trend-down";
+  }
+
+  const riskStyle = weather && weather.available ? RISK_STYLES[weather.risk] || RISK_STYLES.low : null;
 
   return (
     <div>
@@ -109,6 +168,7 @@ function Dashboard() {
               </ResponsiveContainer>
             </div>
 
+            {/* Forecast card: normal case */}
             {forecast && !forecast.detail && (
               <div className="card">
                 <h2>Next Week Forecast</h2>
@@ -117,11 +177,84 @@ function Dashboard() {
                     <div className="stat-label">Current Price</div>
                     <div className="stat-value">₹{forecast.current_price.toFixed(2)}</div>
                   </div>
-                  <div className={`stat-box ${forecast.predicted_next_week_price > forecast.current_price ? "trend-up" : "trend-down"}`}>
+                  <div className={`stat-box ${trendClass}`}>
                     <div className="stat-label">Predicted Next Week</div>
                     <div className="stat-value">₹{forecast.predicted_next_week_price.toFixed(2)}</div>
                   </div>
                 </div>
+                <p style={{ margin: "12px 0 0", fontSize: "0.85rem", opacity: 0.75 }}>
+                  Based on prices up to {formatDate(forecast.last_updated)}
+                  {forecast.method === "baseline"
+                    ? " · Method: last week's price (best performer for this crop)"
+                    : forecast.method === "model"
+                    ? " · Method: machine learning model"
+                    : ""}
+                </p>
+              </div>
+            )}
+
+            {/* Forecast card: not available (e.g. Cotton, no recent prices) */}
+            {forecast && forecast.detail && (
+              <div className="card">
+                <h2>Next Week Forecast</h2>
+                <p style={{ margin: 0 }}>
+                  {typeof forecast.detail === "string" ? forecast.detail : "Forecast not available."}
+                </p>
+              </div>
+            )}
+
+            {/* Weather card */}
+            {weather && !weather.detail && (
+              <div className="card">
+                <h2>7-Day Weather Outlook{weather.district ? ` - ${weather.district}` : ""}</h2>
+
+                {weather.available ? (
+                  <>
+                    <div
+                      style={{
+                        background: riskStyle.bg,
+                        borderLeft: `4px solid ${riskStyle.border}`,
+                        borderRadius: "8px",
+                        padding: "12px 16px",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, marginBottom: "4px" }}>{riskStyle.label}</div>
+                      <div>{weather.message}</div>
+                    </div>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                      {weather.daily.map((d) => (
+                        <div
+                          key={d.date}
+                          style={{
+                            flex: "1 1 100px",
+                            minWidth: "100px",
+                            textAlign: "center",
+                            padding: "10px 6px",
+                            borderRadius: "8px",
+                            background: "rgba(0,0,0,0.04)",
+                            fontSize: "0.85rem",
+                          }}
+                        >
+                          <div style={{ fontWeight: 600 }}>{formatDay(d.date)}</div>
+                          <div style={{ fontSize: "1.4rem", margin: "4px 0" }}>{rainIcon(d.rain_mm)}</div>
+                          <div>{d.rain_mm} mm</div>
+                          <div style={{ opacity: 0.7 }}>{d.rain_chance_pct}% chance</div>
+                          <div style={{ opacity: 0.7 }}>{d.temp_max}°C</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {weather.updated_at && (
+                      <p style={{ margin: "12px 0 0", fontSize: "0.8rem", opacity: 0.65 }}>
+                        Forecast updated: {weather.updated_at} · Source: Open-Meteo
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ margin: 0 }}>{weather.message || "Weather forecast is not available right now."}</p>
+                )}
               </div>
             )}
 
