@@ -5,6 +5,7 @@ import os
 
 from backend.app.auth import register_user, login_user
 from backend.app.weather import get_weather_outlook   # 7-day rain outlook
+from backend.app.production import get_production_summary   # NEW: historical production statistics
 from pydantic import BaseModel
 
 from ml_pipeline.harvest_and_mandi import get_harvest_recommendation, get_best_mandi, get_price_direction
@@ -218,6 +219,22 @@ def weather_outlook(commodity: str):
         # "district" is missing only when the crop name itself is unknown
         raise HTTPException(status_code=404, detail=result["message"])
     return {"commodity": commodity, **result}
+
+
+# NEW ENDPOINT (#12)
+@app.get("/production/{commodity}")
+def production_statistics(commodity: str):
+    """
+    Historical production statistics (1997-2012) for a crop in Gujarat: the
+    state-wide yearly trend (production, area, yield) and the top producing
+    districts. A crop we track but have no production data for (e.g. Cumin)
+    returns 200 with available=False, so the dashboard can show a message.
+    """
+    # Match the crop name ignoring upper/lower case
+    crop_name = next((c for c in df["commodity"].unique() if c.lower() == commodity.lower()), None)
+    if crop_name is None:
+        raise HTTPException(status_code=404, detail=f"No data found for crop: {commodity}")
+    return {"commodity": crop_name, **get_production_summary(crop_name)}
 
 
 @app.post("/auth/register")
