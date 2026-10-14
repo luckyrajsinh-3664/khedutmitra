@@ -1,11 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import os
 
 from backend.app.auth import register_user, login_user
 from backend.app.weather import get_weather_outlook   # 7-day rain outlook
-from backend.app.production import get_production_summary   # NEW: historical production statistics
+from backend.app.production import get_production_summary   # historical production statistics
+from backend.app.assistant import answer_question   # NEW: Gemini AI assistant
 from pydantic import BaseModel
 
 from ml_pipeline.harvest_and_mandi import get_harvest_recommendation, get_best_mandi, get_price_direction
@@ -20,6 +21,12 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     mobile_number: str
     password: str
+
+# What the chat box sends to the assistant (NEW)
+class ChatRequest(BaseModel):
+    question: str
+    crop: str | None = None        # crop selected on the dashboard (optional)
+    language: str | None = None    # "en" or "gu"; leave empty to detect from the question
 
 # Create the FastAPI app - this is the "server" object everything attaches to
 app = FastAPI(title="KhedutMitra API")
@@ -221,7 +228,6 @@ def weather_outlook(commodity: str):
     return {"commodity": commodity, **result}
 
 
-# NEW ENDPOINT (#12)
 @app.get("/production/{commodity}")
 def production_statistics(commodity: str):
     """
@@ -235,6 +241,21 @@ def production_statistics(commodity: str):
     if crop_name is None:
         raise HTTPException(status_code=404, detail=f"No data found for crop: {commodity}")
     return {"commodity": crop_name, **get_production_summary(crop_name)}
+
+
+# NEW ENDPOINT (#13)
+@app.post("/assistant/chat")
+def assistant_chat(data: ChatRequest, request: Request):
+    """
+    AI assistant: answers a farmer's question (English or Gujarati) using only our
+    own price, weather, mandi and production facts. Always returns 200: if the
+    assistant is unavailable or the visitor is over the rate limit, 'available'
+    is False and 'message' explains why, so the chat box can show it.
+    """
+    # Behind Render's proxy the real visitor address is in X-Forwarded-For
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+    return answer_question(data.question, data.crop, data.language, ip)
 
 
 @app.post("/auth/register")
