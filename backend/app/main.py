@@ -1,14 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-import joblib
 import os
 
 from backend.app.auth import register_user, login_user
-from backend.app.weather import get_weather_outlook   # NEW: 7-day rain outlook
+from backend.app.weather import get_weather_outlook   # 7-day rain outlook
 from pydantic import BaseModel
 
-from ml_pipeline.harvest_and_mandi import get_harvest_recommendation, get_best_mandi
+from ml_pipeline.harvest_and_mandi import get_harvest_recommendation, get_best_mandi, get_price_direction
 
 
 # These define what data we expect farmers to send when registering/logging in
@@ -151,50 +150,36 @@ def get_aggregated_prices(commodity: str, granularity: str = "daily", market: st
 @app.get("/forecast/price/{commodity}")
 def get_price_forecast(commodity: str):
     """
-    Returns a simple forecast for next week's price using the saved model.
+    Returns the forecast for NEXT week's price.
+    Uses the saved ML model where one beat the baseline in our tests; for the other
+    crops (Groundnut, Castor Seed, Cumin) the forecast is the baseline
+    "next week = this week". The 'method' field says which one was used.
+    If the crop's latest price is too old (e.g. an off-season crop), we return a
+    404 with an explanation instead of a misleading forecast.
     """
-    model_path = os.path.join(MODELS_DIR, f"{commodity.replace(' ', '_')}_price_model.pkl")
+    # Match the crop name ignoring upper/lower case, e.g. "castor seed" -> "Castor Seed"
+    crop_name = next((c for c in df["commodity"].unique() if c.lower() == commodity.lower()), None)
+    if crop_name is None:
+        raise HTTPException(status_code=404, detail=f"No data found for crop: {commodity}")
 
-    if not os.path.exists(model_path):
+    info = get_price_direction(df, crop_name)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"Not enough price history to forecast {commodity}")
+
+    if info["stale"]:
         raise HTTPException(
             status_code=404,
-            detail=f"No trained model found for {commodity}. Available models use the baseline for this crop."
+            detail=(f"No recent prices for {crop_name} (last reported {info['last_updated']}, "
+                    f"about {info['weeks_old']} weeks ago). Forecast not available.")
         )
 
-    model = joblib.load(model_path)
-
-    # Build the most recent feature values from real data to feed into the model
-    crop_df = df[df["commodity"].str.lower() == commodity.lower()].copy()
-    crop_df = crop_df.set_index("date")
-    weekly = crop_df.resample("W").agg(
-        price=("modal_price", "mean"),
-        arrivals=("arrival_quantity", "sum")
-    ).reset_index()
-
-    weekly["lag_1"] = weekly["price"].shift(1)
-    weekly["lag_2"] = weekly["price"].shift(2)
-    weekly["lag_4"] = weekly["price"].shift(4)
-    weekly["rolling_mean_4"] = weekly["price"].shift(1).rolling(window=4).mean()
-    weekly["rolling_mean_8"] = weekly["price"].shift(1).rolling(window=8).mean()
-    weekly["arrivals_lag_1"] = weekly["arrivals"].shift(1)
-    weekly["month"] = weekly["date"].dt.month
-
-    latest = weekly.dropna().iloc[-1]
-
-    feature_cols = ["lag_1", "lag_2", "lag_4", "rolling_mean_4",
-                     "rolling_mean_8", "arrivals_lag_1", "month"]
-
-    # Keep as a DataFrame with column names, matching how the model was
-    # trained (avoids a harmless but noisy sklearn warning)
-    X = latest[feature_cols].to_frame().T
-
-    predicted_price = model.predict(X)[0]
-
     return {
-        "commodity": commodity,
-        "current_price": round(latest["price"], 2),
-        "predicted_next_week_price": round(predicted_price, 2),
-        "last_updated": latest["date"].strftime("%Y-%m-%d")
+        "commodity": crop_name,
+        "current_price": info["current_price"],
+        "predicted_next_week_price": info["predicted_price"],
+        "change_percent": info["change_percent"],
+        "method": info["method"],
+        "last_updated": info["last_updated"],
     }
 
 
@@ -220,13 +205,12 @@ def best_mandi(commodity: str):
     return {"commodity": commodity, **result}
 
 
-# NEW ENDPOINT (#11)
 @app.get("/weather/{commodity}")
 def weather_outlook(commodity: str):
     """
     Returns the next 7 days of weather (rain, temperature) for the district
     where this crop is grown, plus a simple rain-risk level for harvesting.
-    If the free weather API is down we still return 200 with available=False,
+    If the weather source is unavailable we still return 200 with available=False,
     so the dashboard keeps working without weather.
     """
     result = get_weather_outlook(commodity)

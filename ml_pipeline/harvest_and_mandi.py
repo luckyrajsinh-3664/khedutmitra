@@ -20,10 +20,19 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from backend.app.weather import get_weather_outlook  # NEW: 7-day rain outlook
+from backend.app.weather import get_weather_outlook  # 7-day rain outlook
 
 DATA_PATH = "data/processed/mandi_prices_merged.parquet"
 MODELS_DIR = "backend/app/models"
+
+# The 7 features the saved price models were trained on (order matters)
+FEATURE_COLS = ["lag_1", "lag_2", "lag_4", "rolling_mean_4",
+                "rolling_mean_8", "arrivals_lag_1", "month"]
+
+# If a crop's latest price is older than this many days, we do NOT forecast.
+# (Some crops, like Cotton, are only traded in season, so their latest data
+# can be months old. A forecast built on that would be misleading.)
+STALE_AFTER_DAYS = 42   # 6 weeks
 
 # CROP CALENDAR: standard sowing and harvesting months for Gujarat.
 # Based on general agricultural extension knowledge (kharif crops are
@@ -49,13 +58,18 @@ def get_crop_calendar(commodity):
     return CROP_CALENDAR[commodity]
 
 
-def get_current_month():
+def get_india_now():
     """
-    Current month in Indian time (UTC+5:30). The Render server runs on UTC,
+    Current date and time in Indian time (UTC+5:30). The Render server runs on UTC,
     so we shift the clock ourselves instead of trusting the server's time zone.
     """
     india = timezone(timedelta(hours=5, minutes=30))
-    return datetime.now(india).month
+    return datetime.now(india)
+
+
+def get_current_month():
+    """Current month number in Indian time."""
+    return get_india_now().month
 
 
 def get_best_mandi(df, commodity, recent_days=90):
@@ -97,42 +111,78 @@ def get_best_mandi(df, commodity, recent_days=90):
 
 def get_price_direction(df, commodity):
     """
-    Use our saved price forecasting model to check if next week's price
-    is expected to go UP or DOWN compared to this week. This tells us
-    whether "wait" or "sell now" is the better suggestion.
+    Forecast NEXT week's price for a crop and say whether it is rising, falling or stable.
+
+    How the features are built: every feature in training was "information known
+    BEFORE the week being predicted" (lag_1 = the previous week's price, etc.).
+    To predict the week AFTER the latest data week, we therefore build the features
+    from the most recent weeks: lag_1 = the latest week's price, lag_2 = the week
+    before that, and so on.
+
+    Crops with no saved model (Groundnut, Castor Seed, Cumin) are the ones where
+    the baseline "next week = this week" beat every ML model in our tests, so for
+    them the forecast IS the baseline.
+
+    If the latest price is more than STALE_AFTER_DAYS old (e.g. an off-season crop),
+    no forecast is made: direction is "unavailable" and stale is True.
     """
-    model_path = os.path.join(MODELS_DIR, f"{commodity.replace(' ', '_')}_price_model.pkl")
+    crop_df = df[df["commodity"] == commodity]
+    if crop_df.empty:
+        return None
 
-    if not os.path.exists(model_path):
-        return None  # No trained model for this crop; we'll skip the price-based suggestion
-
-    model = joblib.load(model_path)
-
-    crop_df = df[df["commodity"] == commodity].copy()
-    crop_df = crop_df.set_index("date")
-    weekly = crop_df.resample("W").agg(
+    # Weekly average price and total arrivals (weeks end on Sunday)
+    weekly = crop_df.set_index("date").resample("W").agg(
         price=("modal_price", "mean"),
         arrivals=("arrival_quantity", "sum")
-    ).reset_index()
+    )
+    weekly["price"] = weekly["price"].ffill(limit=2)   # fill short reporting gaps only
+    prices = weekly["price"].dropna()
 
-    weekly["lag_1"] = weekly["price"].shift(1)
-    weekly["lag_2"] = weekly["price"].shift(2)
-    weekly["lag_4"] = weekly["price"].shift(4)
-    weekly["rolling_mean_4"] = weekly["price"].shift(1).rolling(window=4).mean()
-    weekly["rolling_mean_8"] = weekly["price"].shift(1).rolling(window=8).mean()
-    weekly["arrivals_lag_1"] = weekly["arrivals"].shift(1)
-    weekly["month"] = weekly["date"].dt.month
+    if len(prices) < 8:      # need 8 weeks for rolling_mean_8
+        return None
 
-    latest = weekly.dropna().iloc[-1]
-    feature_cols = ["lag_1", "lag_2", "lag_4", "rolling_mean_4",
-                     "rolling_mean_8", "arrivals_lag_1", "month"]
+    last_week = prices.index[-1]
+    current_price = float(prices.iloc[-1])
 
-    # Keep as a DataFrame with column names, matching how the model was
-    # trained (avoids a harmless but noisy sklearn warning)
-    X = latest[feature_cols].to_frame().T
+    # How old is the latest price, compared with today (Indian time)?
+    days_old = (get_india_now().date() - last_week.date()).days
+    weeks_old = max(days_old // 7, 0)
 
-    predicted_price = model.predict(X)[0]
-    current_price = latest["price"]
+    # ---- Stale data: refuse to forecast ----
+    if days_old > STALE_AFTER_DAYS:
+        return {
+            "current_price": round(current_price, 2),
+            "predicted_price": None,
+            "change_percent": None,
+            "direction": "unavailable",
+            "method": "none",
+            "stale": True,
+            "weeks_old": weeks_old,
+            "last_updated": last_week.strftime("%Y-%m-%d"),
+        }
+
+    model_path = os.path.join(MODELS_DIR, f"{commodity.replace(' ', '_')}_price_model.pkl")
+
+    if os.path.exists(model_path):
+        model = joblib.load(model_path)
+        method = "model"
+
+        # Features for the week AFTER last_week
+        features = {
+            "lag_1": prices.iloc[-1],
+            "lag_2": prices.iloc[-2],
+            "lag_4": prices.iloc[-4],
+            "rolling_mean_4": prices.iloc[-4:].mean(),
+            "rolling_mean_8": prices.iloc[-8:].mean(),
+            "arrivals_lag_1": weekly["arrivals"].loc[last_week],
+            "month": (last_week + pd.Timedelta(days=7)).month,
+        }
+        # DataFrame with column names, matching how the model was trained
+        X = pd.DataFrame([features], columns=FEATURE_COLS)
+        predicted_price = float(model.predict(X)[0])
+    else:
+        method = "baseline"
+        predicted_price = current_price     # baseline: next week = this week
 
     change_percent = ((predicted_price - current_price) / current_price) * 100
 
@@ -147,7 +197,11 @@ def get_price_direction(df, commodity):
         "current_price": round(current_price, 2),
         "predicted_price": round(predicted_price, 2),
         "change_percent": round(change_percent, 2),
-        "direction": direction
+        "direction": direction,
+        "method": method,                                   # "model" or "baseline"
+        "stale": False,
+        "weeks_old": weeks_old,
+        "last_updated": last_week.strftime("%Y-%m-%d"),     # last week with data
     }
 
 
@@ -173,8 +227,19 @@ def get_harvest_recommendation(commodity):
 
     # Build a simple, plain-language recommendation.
     # Large single-week predicted swings are treated cautiously, since a
-    # one-week model prediction can be noisy for volatile crops like Sesame.
-    if price_info:
+    # one-week model prediction can be noisy for volatile crops.
+    if price_info is None:
+        advice = "Price forecast not available for this crop; recommendation based on seasonal calendar only."
+    elif price_info["stale"]:
+        # Latest price is too old to forecast from (off-season or not reported)
+        advice = (f"No recent prices are available for this crop (last reported {price_info['last_updated']}, "
+                  f"about {price_info['weeks_old']} weeks ago, probably off-season or not reported), "
+                  "so we cannot give a reliable price forecast.")
+    elif price_info["method"] == "baseline":
+        advice = (f"For this crop, last week's price (about Rs. {price_info['current_price']} per quintal) "
+                  "has been the most accurate predictor in our tests, so we expect prices to stay "
+                  "close to the current level.")
+    else:
         change = price_info["change_percent"]
         if abs(change) > 15:
             advice = f"Our model predicts a large price swing ({change}% next week), but such large single-week changes are less reliable. Treat this as a signal to watch prices closely rather than a firm prediction."
@@ -184,14 +249,12 @@ def get_harvest_recommendation(commodity):
             advice = f"Prices are trending downward ({change}% expected next week). Consider selling soon rather than waiting."
         else:
             advice = "Prices are expected to remain stable in the short term."
-    else:
-        advice = "Price forecast not available for this crop; recommendation based on seasonal calendar only."
 
-    # ---- NEW: rain-aware harvest advice (rule-based safety check) ----
+    # ---- Rain-aware harvest advice (rule-based safety check) ----
     # Is today inside this crop's typical harvest months?
     in_harvest_season = get_current_month() in calendar["harvest_months"]
 
-    # get_weather_outlook never raises; if the weather API is down it returns available=False
+    # get_weather_outlook never raises; if the weather source is down it returns available=False
     weather = get_weather_outlook(commodity)
 
     if weather["available"]:
