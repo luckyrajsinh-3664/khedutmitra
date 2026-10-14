@@ -1,0 +1,10 @@
+crop,train_weeks,test_weeks,best_no_weather,MAE_no_weather,MAPE_no_weather,best_with_weather,MAE_with_weather,MAPE_with_weather,MAE_change_%,baseline_MAE
+Groundnut,232,58,Linear Regression,114.9,1.83,Linear Regression,115.9,1.84,0.9,113.5
+Cotton,176,45,Linear Regression,168.6,2.42,Linear Regression,176.8,2.53,4.9,148.1
+Sesame,217,55,Linear Regression,699.4,8.69,Linear Regression,707.3,8.77,1.1,642.7
+Wheat,232,59,Linear Regression,30.4,1.15,Linear Regression,33.0,1.25,8.5,31.9
+Bajra,232,59,Linear Regression,53.5,2.08,Linear Regression,58.7,2.28,9.8,56.9
+Castor Seed,232,59,Linear Regression,84.4,1.26,Linear Regression,84.2,1.25,-0.3,78.9
+Chickpea,168,43,Linear Regression,152.3,2.86,Linear Regression,150.4,2.83,-1.2,153.5
+Cumin,232,59,Linear Regression,360.1,1.85,Random Forest,407.4,2.09,13.1,328.7
+Mustard,184,47,Linear Regression,650.9,9.25,Linear Regression,665.9,9.45,2.3,567.9

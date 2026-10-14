@@ -1,0 +1,10 @@
+crop,test_weeks,best_no_weather,MAE_no_weather,best_with_weather,MAE_with_weather,MAE_change_%,baseline_MAE
+Groundnut,59,Random Forest,1161.0,Random Forest,1102.0,-5.1,1237.3
+Cotton,45,Linear Regression,203.0,Linear Regression,226.2,11.4,226.0
+Sesame,56,Random Forest,0.8,Random Forest,0.8,-1.6,0.8
+Wheat,59,Random Forest,413.9,Random Forest,408.6,-1.3,428.2
+Bajra,59,Random Forest,49.0,Random Forest,51.0,4.1,65.6
+Castor Seed,59,Linear Regression,873.9,Linear Regression,924.9,5.8,1063.9
+Chickpea,43,Linear Regression,246.6,Random Forest,249.5,1.2,238.2
+Cumin,59,Random Forest,986.9,Random Forest,990.8,0.4,1025.1
+Mustard,47,Random Forest,37.4,Random Forest,35.5,-5.1,42.5
