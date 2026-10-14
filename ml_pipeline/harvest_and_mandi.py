@@ -4,11 +4,23 @@ This module is rule-based (not machine learning). It combines:
   1. Standard Gujarat crop calendars (when each crop is typically sown/harvested)
   2. Real mandi price data (to recommend which market pays best)
   3. Our trained price forecast models (to suggest whether to sell now or wait)
+  4. The 7-day rain forecast (to warn against harvesting just before heavy rain)
 """
+
+import os
+import sys
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import joblib
-import os
+
+# Make the project root importable, so this file also works when run directly
+# (python ml_pipeline\harvest_and_mandi.py). On Render the root is already on the path.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from backend.app.weather import get_weather_outlook  # NEW: 7-day rain outlook
 
 DATA_PATH = "data/processed/mandi_prices_merged.parquet"
 MODELS_DIR = "backend/app/models"
@@ -35,6 +47,15 @@ def get_crop_calendar(commodity):
     if commodity not in CROP_CALENDAR:
         return None
     return CROP_CALENDAR[commodity]
+
+
+def get_current_month():
+    """
+    Current month in Indian time (UTC+5:30). The Render server runs on UTC,
+    so we shift the clock ourselves instead of trusting the server's time zone.
+    """
+    india = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(india).month
 
 
 def get_best_mandi(df, commodity, recent_days=90):
@@ -132,8 +153,8 @@ def get_price_direction(df, commodity):
 
 def get_harvest_recommendation(commodity):
     """
-    Combine crop calendar + price forecast into one plain-language
-    recommendation for the farmer.
+    Combine crop calendar + price forecast + 7-day rain outlook into one
+    plain-language recommendation for the farmer.
     """
     df = pd.read_parquet(DATA_PATH)
 
@@ -166,13 +187,32 @@ def get_harvest_recommendation(commodity):
     else:
         advice = "Price forecast not available for this crop; recommendation based on seasonal calendar only."
 
+    # ---- NEW: rain-aware harvest advice (rule-based safety check) ----
+    # Is today inside this crop's typical harvest months?
+    in_harvest_season = get_current_month() in calendar["harvest_months"]
+
+    # get_weather_outlook never raises; if the weather API is down it returns available=False
+    weather = get_weather_outlook(commodity)
+
+    if weather["available"]:
+        if in_harvest_season and weather["risk"] in ("moderate", "high"):
+            # Harvest time + rain coming: this matters most, so put it first
+            advice = "WEATHER: " + weather["message"] + " " + advice
+        elif in_harvest_season:
+            advice = advice + " Weather: " + weather["message"]
+        elif weather["risk"] == "high":
+            # Not harvest time, but heavy rain can still damage stored/drying produce
+            advice = advice + " Weather alert: " + weather["message"]
+
     return {
         "commodity": commodity,
         "season": calendar["season"],
         "typical_sowing_months": sowing_str,
         "typical_harvest_months": harvest_str,
+        "in_harvest_season": in_harvest_season,
         "price_forecast": price_info,
         "best_mandi": mandi_info,
+        "weather_outlook": weather,
         "advice": advice
     }
 
@@ -185,5 +225,5 @@ if __name__ == "__main__":
         print(f"{'='*60}")
         result = get_harvest_recommendation(crop)
         for key, value in result.items():
-            if key != "best_mandi":  # skip printing the long market list for readability
+            if key not in ("best_mandi", "weather_outlook"):  # skip long lists for readability
                 print(f"  {key}: {value}")

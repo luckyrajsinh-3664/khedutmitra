@@ -5,6 +5,7 @@ import joblib
 import os
 
 from backend.app.auth import register_user, login_user
+from backend.app.weather import get_weather_outlook   # NEW: 7-day rain outlook
 from pydantic import BaseModel
 
 from ml_pipeline.harvest_and_mandi import get_harvest_recommendation, get_best_mandi
@@ -201,8 +202,8 @@ def get_price_forecast(commodity: str):
 def harvest_window(commodity: str):
     """
     Returns the full harvest recommendation for a crop: typical sowing/
-    harvest months, price forecast direction, best mandi, and plain-
-    language advice - combining Module 5's rule-based logic.
+    harvest months, price forecast direction, best mandi, 7-day weather
+    outlook, and plain-language advice - combining rule-based logic.
     """
     result = get_harvest_recommendation(commodity)
     if "error" in result:
@@ -217,6 +218,23 @@ def best_mandi(commodity: str):
     if result is None:
         raise HTTPException(status_code=404, detail=f"No mandi data found for {commodity}")
     return {"commodity": commodity, **result}
+
+
+# NEW ENDPOINT (#11)
+@app.get("/weather/{commodity}")
+def weather_outlook(commodity: str):
+    """
+    Returns the next 7 days of weather (rain, temperature) for the district
+    where this crop is grown, plus a simple rain-risk level for harvesting.
+    If the free weather API is down we still return 200 with available=False,
+    so the dashboard keeps working without weather.
+    """
+    result = get_weather_outlook(commodity)
+    if not result["available"] and "district" not in result:
+        # "district" is missing only when the crop name itself is unknown
+        raise HTTPException(status_code=404, detail=result["message"])
+    return {"commodity": commodity, **result}
+
 
 @app.post("/auth/register")
 def register(data: RegisterRequest):
