@@ -156,7 +156,7 @@ def build_context(crop):
     else:
         how = "a machine learning model" if pf["method"] == "model" else "last week's price (the best method in our tests for this crop)"
         lines.append(f"Latest weekly average price: Rs. {pf['current_price']} per quintal "
-                     f"(week ending {pf['last_updated']}).")
+                     f"(latest data from {pf['last_updated']}).")
         lines.append(f"Forecast for next week: Rs. {pf['predicted_price']} per quintal "
                      f"({pf['change_percent']}% change, trend: {pf['direction']}). Method: {how}.")
         sources.append(f"price forecast (data up to {pf['last_updated']})")

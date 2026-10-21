@@ -141,12 +141,16 @@ def get_price_direction(df, commodity):
     if len(prices) < 8:      # need 8 weeks for rolling_mean_8
         return None
 
-    last_week = prices.index[-1]
+    last_week = prices.index[-1]          # label of the last week (a Sunday, can be in the future)
     current_price = float(prices.iloc[-1])
 
+    # The REAL last day with a reported price. The week label above is a Sunday and can be
+    # later than any real data, so we use the actual last date for what we show and for staleness.
+    last_date = min(last_week, crop_df["date"].max())
+
     # How old is the latest price, compared with today (Indian time)?
-    days_old = (get_india_now().date() - last_week.date()).days
-    weeks_old = max(days_old // 7, 0)
+    days_old = max((get_india_now().date() - last_date.date()).days, 0)
+    weeks_old = days_old // 7
 
     # ---- Stale data: refuse to forecast ----
     if days_old > STALE_AFTER_DAYS:
@@ -158,7 +162,7 @@ def get_price_direction(df, commodity):
             "method": "none",
             "stale": True,
             "weeks_old": weeks_old,
-            "last_updated": last_week.strftime("%Y-%m-%d"),
+            "last_updated": last_date.strftime("%Y-%m-%d"),
         }
 
     model_path = os.path.join(MODELS_DIR, f"{commodity.replace(' ', '_')}_price_model.pkl")
@@ -201,7 +205,7 @@ def get_price_direction(df, commodity):
         "method": method,                                   # "model" or "baseline"
         "stale": False,
         "weeks_old": weeks_old,
-        "last_updated": last_week.strftime("%Y-%m-%d"),     # last week with data
+        "last_updated": last_date.strftime("%Y-%m-%d"),     # last day with a reported price
     }
 
 
