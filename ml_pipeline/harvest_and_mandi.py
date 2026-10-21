@@ -5,6 +5,7 @@ This module is rule-based (not machine learning). It combines:
   2. Real mandi price data (to recommend which market pays best)
   3. Our trained price forecast models (to suggest whether to sell now or wait)
   4. The 7-day rain forecast (to warn against harvesting just before heavy rain)
+  5. Our trained arrival (demand) forecast models
 """
 
 import os
@@ -29,10 +30,21 @@ MODELS_DIR = "backend/app/models"
 FEATURE_COLS = ["lag_1", "lag_2", "lag_4", "rolling_mean_4",
                 "rolling_mean_8", "arrivals_lag_1", "month"]
 
+# The 6 features the saved arrival (demand) models were trained on (order matters)
+ARRIVAL_FEATURE_COLS = ["arrivals_lag_1", "arrivals_lag_2", "arrivals_lag_4",
+                        "arrivals_rolling_4", "price_lag_1", "month"]
+
 # If a crop's latest price is older than this many days, we do NOT forecast.
 # (Some crops, like Cotton, are only traded in season, so their latest data
 # can be months old. A forecast built on that would be misleading.)
 STALE_AFTER_DAYS = 42   # 6 weeks
+
+# If the weekly average price changes by more than this much in one week, the forecast
+# is flagged as unreliable (often one mandi reported unusual prices, or a mandi started/stopped reporting).
+SHARP_MOVE_PCT = 30
+
+# Weekly arrivals are noisy, so "stable" means within +/- this percentage of last week.
+ARRIVAL_STABLE_BAND_PCT = 10
 
 # CROP CALENDAR: standard sowing and harvesting months for Gujarat.
 # Based on general agricultural extension knowledge (kharif crops are
@@ -125,6 +137,9 @@ def get_price_direction(df, commodity):
 
     If the latest price is more than STALE_AFTER_DAYS old (e.g. an off-season crop),
     no forecast is made: direction is "unavailable" and stale is True.
+
+    If the weekly average price moved by more than SHARP_MOVE_PCT in one week,
+    sharp_move is True and the advice says the forecast is unreliable.
     """
     crop_df = df[df["commodity"] == commodity]
     if crop_df.empty:
@@ -152,6 +167,11 @@ def get_price_direction(df, commodity):
     days_old = max((get_india_now().date() - last_date.date()).days, 0)
     weeks_old = days_old // 7
 
+    # How much did the weekly average move compared with the week before?
+    previous_price = float(prices.iloc[-2])
+    weekly_move = (current_price - previous_price) / previous_price * 100
+    sharp_move = abs(weekly_move) > SHARP_MOVE_PCT
+
     # ---- Stale data: refuse to forecast ----
     if days_old > STALE_AFTER_DAYS:
         return {
@@ -161,6 +181,8 @@ def get_price_direction(df, commodity):
             "direction": "unavailable",
             "method": "none",
             "stale": True,
+            "sharp_move": False,
+            "weekly_move_percent": round(weekly_move, 1),
             "weeks_old": weeks_old,
             "last_updated": last_date.strftime("%Y-%m-%d"),
         }
@@ -204,9 +226,112 @@ def get_price_direction(df, commodity):
         "direction": direction,
         "method": method,                                   # "model" or "baseline"
         "stale": False,
+        "sharp_move": bool(sharp_move),
+        "weekly_move_percent": round(weekly_move, 1),
         "weeks_old": weeks_old,
         "last_updated": last_date.strftime("%Y-%m-%d"),     # last day with a reported price
     }
+
+
+def _arrival_features(weekly):
+    """
+    Build the 6 arrival-model features for the week AFTER the last week in `weekly`.
+    `weekly` has one row per COMPLETE week (index = Sunday label), columns: price, arrivals.
+    This mirrors add_features() in train_arrival_models.py, shifted forward by one week:
+      arrivals_lag_1 = last week, lag_2 = the week before, lag_4 = three weeks before that,
+      arrivals_rolling_4 = average of the last 4 weeks, price_lag_1 = last week's price.
+    Returns (feature dict, label of the last week).
+    """
+    arr = weekly["arrivals"]
+    last_week = arr.index[-1]
+    # a week with no trades has no price: use the most recent known price instead
+    price_lag = weekly["price"].ffill().iloc[-1]
+    features = {
+        "arrivals_lag_1": arr.iloc[-1],
+        "arrivals_lag_2": arr.iloc[-2],
+        "arrivals_lag_4": arr.iloc[-4],
+        "arrivals_rolling_4": arr.iloc[-4:].mean(),
+        "price_lag_1": price_lag,
+        "month": (last_week + pd.Timedelta(days=7)).month,
+    }
+    return features, last_week
+
+
+def get_arrival_forecast(df, commodity):
+    """
+    Forecast how much of a crop will arrive in the mandis NEXT week (a demand indicator).
+
+    Uses the saved arrival model where one beat the baseline in our tests; for the other
+    crops (Chickpea, Cotton, Wheat) the forecast is the baseline "same as last week".
+    Only COMPLETE weeks are used, because the newest week in the data often holds just
+    a day or two of arrivals, which would look like a crash.
+    Arrivals add up only the mandis that reported, so this is an indicator, not an exact figure.
+    """
+    crop_df = df[df["commodity"] == commodity]
+    if crop_df.empty:
+        return None
+
+    weekly = crop_df.set_index("date").resample("W").agg(
+        price=("modal_price", "mean"),          # NOT forward-filled: same as training
+        arrivals=("arrival_quantity", "sum"),
+    )
+
+    # A week counts as complete once the data reaches (roughly) its end: use the newest date
+    # in the whole dataset as the reference, and allow 2 days (Sat/Sun rarely trade).
+    reference_date = df["date"].max()
+    weekly = weekly[weekly.index <= reference_date + pd.Timedelta(days=2)]
+    if len(weekly) < 8:
+        return None
+
+    features, last_week = _arrival_features(weekly)
+    if pd.isna(features["price_lag_1"]):
+        return None
+
+    last_date = min(last_week, crop_df["date"].max())
+    days_old = max((get_india_now().date() - last_date.date()).days, 0)
+    weeks_old = days_old // 7
+    current = float(features["arrivals_lag_1"])
+    forecast_week_end = last_week + pd.Timedelta(days=7)
+
+    base = {
+        "unit": "tonnes",
+        "week_ending": last_week.strftime("%Y-%m-%d"),                # the complete week we start from
+        "forecast_week_ending": forecast_week_end.strftime("%Y-%m-%d"),
+        "weeks_old": weeks_old,
+        "last_updated": last_date.strftime("%Y-%m-%d"),
+    }
+
+    if days_old > STALE_AFTER_DAYS:
+        return {**base, "current_arrivals": round(current, 1), "predicted_arrivals": None,
+                "change_percent": None, "direction": "unavailable", "method": "none", "stale": True}
+
+    model_path = os.path.join(MODELS_DIR, f"{commodity.replace(' ', '_')}_arrival_model.pkl")
+    if os.path.exists(model_path):
+        model = joblib.load(model_path)
+        X = pd.DataFrame([features], columns=ARRIVAL_FEATURE_COLS)
+        predicted = max(float(model.predict(X)[0]), 0.0)      # arrivals cannot be negative
+        method = "model"
+    else:
+        predicted = current                                    # baseline: same as last week
+        method = "baseline"
+
+    if current >= 1:
+        change_percent = (predicted - current) / current * 100
+        if change_percent > ARRIVAL_STABLE_BAND_PCT:
+            direction = "rising"
+        elif change_percent < -ARRIVAL_STABLE_BAND_PCT:
+            direction = "falling"
+        else:
+            direction = "stable"
+        change_percent = round(change_percent, 1)
+    else:
+        # almost nothing arrived last week, so a percentage is meaningless: compare in tonnes
+        change_percent = None
+        diff = predicted - current
+        direction = "rising" if diff > 1 else "falling" if diff < -1 else "stable"
+
+    return {**base, "current_arrivals": round(current, 1), "predicted_arrivals": round(predicted, 1),
+            "change_percent": change_percent, "direction": direction, "method": method, "stale": False}
 
 
 def get_harvest_recommendation(commodity):
@@ -239,6 +364,11 @@ def get_harvest_recommendation(commodity):
         advice = (f"No recent prices are available for this crop (last reported {price_info['last_updated']}, "
                   f"about {price_info['weeks_old']} weeks ago, probably off-season or not reported), "
                   "so we cannot give a reliable price forecast.")
+    elif price_info["sharp_move"]:
+        # The weekly average jumped: usually only a few mandis reported, or one quoted unusual prices
+        advice = (f"Prices moved sharply last week ({price_info['weekly_move_percent']:+.0f}%). This is unusual and "
+                  "often happens when only a few mandis report, so we cannot give a reliable forecast. "
+                  "Please check today's price at your local mandi before deciding.")
     elif price_info["method"] == "baseline":
         advice = (f"For this crop, last week's price (about Rs. {price_info['current_price']} per quintal) "
                   "has been the most accurate predictor in our tests, so we expect prices to stay "
@@ -286,6 +416,7 @@ def get_harvest_recommendation(commodity):
 
 if __name__ == "__main__":
     # Quick test: run this file directly to see recommendations for all crops
+    all_data = pd.read_parquet(DATA_PATH)
     for crop in CROP_CALENDAR.keys():
         print(f"\n{'='*60}")
         print(f"HARVEST RECOMMENDATION: {crop}")
@@ -294,3 +425,4 @@ if __name__ == "__main__":
         for key, value in result.items():
             if key not in ("best_mandi", "weather_outlook"):  # skip long lists for readability
                 print(f"  {key}: {value}")
+        print(f"  arrival_forecast: {get_arrival_forecast(all_data, crop)}")

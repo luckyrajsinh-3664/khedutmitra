@@ -161,6 +161,11 @@ def build_context(crop):
                      f"({pf['change_percent']}% change, trend: {pf['direction']}). Method: {how}.")
         sources.append(f"price forecast (data up to {pf['last_updated']})")
 
+        if pf.get("sharp_move"):
+            lines.append(f"WARNING: the weekly price moved {pf['weekly_move_percent']}% compared with the previous week, "
+                         "which is unusual (often because only a few mandis reported). The forecast is unreliable: "
+                         "do NOT give a firm sell-or-wait suggestion; tell the farmer to check the price at the local mandi.")
+
     # --- best mandi ---
     m = rec.get("best_mandi")
     if m:

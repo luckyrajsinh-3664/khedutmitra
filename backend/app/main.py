@@ -6,10 +6,13 @@ import os
 from backend.app.auth import register_user, login_user
 from backend.app.weather import get_weather_outlook   # 7-day rain outlook
 from backend.app.production import get_production_summary   # historical production statistics
-from backend.app.assistant import answer_question   # NEW: Gemini AI assistant
+from backend.app.assistant import answer_question   # Gemini AI assistant
 from pydantic import BaseModel
 
-from ml_pipeline.harvest_and_mandi import get_harvest_recommendation, get_best_mandi, get_price_direction
+from ml_pipeline.harvest_and_mandi import (
+    get_harvest_recommendation, get_best_mandi, get_price_direction,
+    get_arrival_forecast,   # NEW: demand (arrivals) forecast
+)
 
 
 # These define what data we expect farmers to send when registering/logging in
@@ -22,7 +25,7 @@ class LoginRequest(BaseModel):
     mobile_number: str
     password: str
 
-# What the chat box sends to the assistant (NEW)
+# What the chat box sends to the assistant
 class ChatRequest(BaseModel):
     question: str
     crop: str | None = None        # crop selected on the dashboard (optional)
@@ -164,6 +167,7 @@ def get_price_forecast(commodity: str):
     "next week = this week". The 'method' field says which one was used.
     If the crop's latest price is too old (e.g. an off-season crop), we return a
     404 with an explanation instead of a misleading forecast.
+    'sharp_move' is True when the weekly average jumped by more than 30%.
     """
     # Match the crop name ignoring upper/lower case, e.g. "castor seed" -> "Castor Seed"
     crop_name = next((c for c in df["commodity"].unique() if c.lower() == commodity.lower()), None)
@@ -187,8 +191,36 @@ def get_price_forecast(commodity: str):
         "predicted_next_week_price": info["predicted_price"],
         "change_percent": info["change_percent"],
         "method": info["method"],
+        "sharp_move": info["sharp_move"],
+        "weekly_move_percent": info["weekly_move_percent"],
         "last_updated": info["last_updated"],
     }
+
+
+# NEW ENDPOINT (#14)
+@app.get("/forecast/arrival/{commodity}")
+def arrival_forecast(commodity: str):
+    """
+    Demand indicator: how many tonnes of the crop are expected to arrive in the mandis
+    next week, and whether that is rising, falling or stable compared with last week.
+    Uses the saved arrival model where one beat the baseline; otherwise "same as last week".
+    A crop whose data is too old returns a 404 with an explanation.
+    """
+    crop_name = next((c for c in df["commodity"].unique() if c.lower() == commodity.lower()), None)
+    if crop_name is None:
+        raise HTTPException(status_code=404, detail=f"No data found for crop: {commodity}")
+
+    info = get_arrival_forecast(df, crop_name)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"Not enough arrival history to forecast {commodity}")
+
+    if info["stale"]:
+        raise HTTPException(
+            status_code=404,
+            detail=(f"No recent arrivals reported for {crop_name} (last reported {info['last_updated']}, "
+                    f"about {info['weeks_old']} weeks ago). Demand forecast not available.")
+        )
+    return {"commodity": crop_name, **info}
 
 
 @app.get("/harvest-window/{commodity}")
@@ -243,7 +275,6 @@ def production_statistics(commodity: str):
     return {"commodity": crop_name, **get_production_summary(crop_name)}
 
 
-# NEW ENDPOINT (#13)
 @app.post("/assistant/chat")
 def assistant_chat(data: ChatRequest, request: Request):
     """
