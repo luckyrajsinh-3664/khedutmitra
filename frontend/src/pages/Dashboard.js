@@ -12,6 +12,13 @@ const RISK_STYLES = {
   high:     { bg: "#FBE4E1", border: "#C0392B", label: "High rain risk" },
 };
 
+// Colours and wording for the demand (arrivals) trend
+const DEMAND_STYLES = {
+  rising:  { bg: "#E8F3E6", border: "#2F5233", label: "Arrivals rising",  text: "More produce is expected at the mandi next week." },
+  stable:  { bg: "#F1EEE6", border: "#8A8470", label: "Arrivals stable",  text: "Arrivals are expected to stay about the same next week." },
+  falling: { bg: "#FFF3DC", border: "#E0A030", label: "Arrivals falling", text: "Less produce is expected at the mandi next week." },
+};
+
 // "2026-09-27" -> "27 Sep 2026"
 function formatDate(iso) {
   if (!iso) return "";
@@ -69,6 +76,7 @@ function Dashboard() {
   const [granularity, setGranularity] = useState("daily");
   const [priceHistory, setPriceHistory] = useState([]);
   const [forecast, setForecast] = useState(null);
+  const [arrival, setArrival] = useState(null);
   const [harvestInfo, setHarvestInfo] = useState(null);
   const [weather, setWeather] = useState(null);
   const [production, setProduction] = useState(null);
@@ -96,6 +104,7 @@ function Dashboard() {
     setLoading(true);
     setWeather(null);
     setProduction(null);
+    setArrival(null);
 
     fetch(`${API_BASE}/prices-aggregated/${selectedCrop}?granularity=${granularity}`)
       .then((res) => res.json())
@@ -106,6 +115,12 @@ function Dashboard() {
       .then((res) => res.json())
       .then((data) => { if (!cancelled) setForecast(data); })
       .catch(() => { if (!cancelled) setForecast(null); });
+
+    // Demand indicator (expected arrivals next week), loaded separately
+    fetch(`${API_BASE}/forecast/arrival/${selectedCrop}`)
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled) setArrival(data); })
+      .catch(() => { if (!cancelled) setArrival(null); });
 
     // Weather loads separately, so a slow weather call never blocks the page
     fetch(`${API_BASE}/weather/${selectedCrop}`)
@@ -184,9 +199,10 @@ function Dashboard() {
   };
 
   // Forecast card colour: green only if rising by more than 1%, red only if
-  // falling by more than 1%, otherwise neutral (same 1% rule as the backend)
+  // falling by more than 1%, otherwise neutral (same 1% rule as the backend).
+  // After a sharp weekly move the forecast is unreliable, so no colour at all.
   let trendClass = "";
-  if (forecast && !forecast.detail) {
+  if (forecast && !forecast.detail && !forecast.sharp_move) {
     const change =
       forecast.change_percent !== undefined
         ? forecast.change_percent
@@ -196,6 +212,10 @@ function Dashboard() {
   }
 
   const riskStyle = weather && weather.available ? RISK_STYLES[weather.risk] || RISK_STYLES.low : null;
+
+  // Demand indicator: very small numbers carry little information
+  const demandStyle = arrival && !arrival.detail ? DEMAND_STYLES[arrival.direction] || DEMAND_STYLES.stable : null;
+  const lowVolume = arrival && !arrival.detail && arrival.current_arrivals < 5 && arrival.predicted_arrivals < 5;
 
   const chipLang = chatLang === "gu" ? "gu" : "en";
 
@@ -258,6 +278,25 @@ function Dashboard() {
             {forecast && !forecast.detail && (
               <div className="card">
                 <h2>Next Week Forecast</h2>
+
+                {/* Warning after a sharp weekly move (the forecast is unreliable then) */}
+                {forecast.sharp_move && (
+                  <div
+                    style={{
+                      background: "#FFF3DC",
+                      borderLeft: "4px solid #E0A030",
+                      borderRadius: "8px",
+                      padding: "10px 14px",
+                      marginBottom: "14px",
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    <b>Prices moved sharply last week ({forecast.weekly_move_percent > 0 ? "+" : ""}{forecast.weekly_move_percent}%).</b>{" "}
+                    This is unusual and often happens when only a few mandis report, so the forecast below is
+                    unreliable. Please check today's price at your local mandi.
+                  </div>
+                )}
+
                 <div className="forecast-stats">
                   <div className="stat-box">
                     <div className="stat-label">Current Price</div>
@@ -286,6 +325,60 @@ function Dashboard() {
                 <p style={{ margin: 0 }}>
                   {typeof forecast.detail === "string" ? forecast.detail : "Forecast not available."}
                 </p>
+              </div>
+            )}
+
+            {/* Demand indicator card (expected arrivals next week) */}
+            {arrival && !arrival.detail && (
+              <div className="card">
+                <h2>Market Demand Indicator</h2>
+
+                <div
+                  style={{
+                    background: demandStyle.bg,
+                    borderLeft: `4px solid ${demandStyle.border}`,
+                    borderRadius: "8px",
+                    padding: "12px 16px",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: "4px" }}>
+                    {demandStyle.label}
+                    {arrival.change_percent !== null && arrival.change_percent !== undefined
+                      ? ` (${arrival.change_percent > 0 ? "+" : ""}${arrival.change_percent}%)`
+                      : ""}
+                  </div>
+                  <div>{lowVolume ? "Very little produce is arriving at the mandis for this crop right now." : demandStyle.text}</div>
+                </div>
+
+                <div className="forecast-stats">
+                  <div className="stat-box">
+                    <div className="stat-label">Arrived Week Ending {formatDate(arrival.week_ending)}</div>
+                    <div className="stat-value">{arrival.current_arrivals.toLocaleString("en-IN")} t</div>
+                  </div>
+                  <div className="stat-box">
+                    <div className="stat-label">Expected Week Ending {formatDate(arrival.forecast_week_ending)}</div>
+                    <div className="stat-value">{arrival.predicted_arrivals.toLocaleString("en-IN")} t</div>
+                  </div>
+                </div>
+
+                <p style={{ margin: "12px 0 0", fontSize: "0.8rem", opacity: 0.7 }}>
+                  {lowVolume ? "Volumes this small are a weak signal. " : ""}
+                  Tonnes arriving at the mandis that reported in this district (a demand indicator, not an exact count).
+                  {arrival.method === "baseline"
+                    ? " Method: same as last week (best performer for this crop)."
+                    : arrival.method === "model"
+                    ? " Method: machine learning model."
+                    : ""}
+                </p>
+              </div>
+            )}
+
+            {/* Demand indicator: not available (hidden if the server has no such page yet) */}
+            {arrival && arrival.detail && typeof arrival.detail === "string" && arrival.detail !== "Not Found" && (
+              <div className="card">
+                <h2>Market Demand Indicator</h2>
+                <p style={{ margin: 0 }}>{arrival.detail}</p>
               </div>
             )}
 
