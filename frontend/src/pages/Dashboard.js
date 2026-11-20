@@ -1,19 +1,21 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, NavLink, Outlet } from "react-router-dom";
 import SearchableSelect from "../components/SearchableSelect";
 import ChatWidget from "../components/ChatWidget";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { API_BASE } from "../utils/dashboardHelpers";
 import { useLanguage } from "../i18n/LanguageContext";
+import { wt } from "../i18n/watchlistText";
 import "./DashboardTabs.css";
 
 // The tabs under the crop selector. "end" makes Overview active only on /dashboard itself.
-// labelKey is looked up in the translations file.
+// labelKey is looked up in the translations file; watchKey in watchlistText.js.
 const TABS = [
   { to: "/dashboard",            labelKey: "tabOverview",   end: true },
   { to: "/dashboard/prices",     labelKey: "tabPrices" },
   { to: "/dashboard/weather",    labelKey: "tabWeather" },
   { to: "/dashboard/production", labelKey: "tabProduction" },
+  { to: "/dashboard/watchlist",  watchKey: "tabWatchlist" },
 ];
 
 // Dashboard is a LAYOUT: it keeps the topbar, crop selector, tab bar and chat,
@@ -22,6 +24,7 @@ function Dashboard() {
   const navigate = useNavigate();
   const { t, cropLabel, language } = useLanguage();
   const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+  const token = currentUser?.token;
 
   const [crops, setCrops] = useState([]);
   const [selectedCrop, setSelectedCrop] = useState("Wheat");
@@ -32,6 +35,9 @@ function Dashboard() {
   const [harvestInfo, setHarvestInfo] = useState(null);
   const [weather, setWeather] = useState(null);
   const [production, setProduction] = useState(null);
+
+  // The farmer's watchlist: {items, alert_count}, or {error: "auth" | "load"}, or null while loading
+  const [watchlist, setWatchlist] = useState(null);
 
   // "loadedCrop" is the crop whose data has arrived. While it differs from the selected
   // crop we show "Loading...". Changing only the LANGUAGE does not trigger the loading screen.
@@ -120,10 +126,36 @@ function Dashboard() {
     return () => { cancelled = true; };
   }, [selectedCrop, language]);
 
+  // 4) The farmer's watchlist and alerts (needs the login token). Reloaded when the language changes,
+  //    because the alert sentences come from the backend. The Watchlist tab calls refreshWatchlist()
+  //    after adding or removing a crop.
+  const refreshWatchlist = useCallback(() => {
+    if (!token) {
+      setWatchlist({ error: "auth" });
+      return Promise.resolve();
+    }
+    return fetch(`${API_BASE}/watchlist?lang=${language}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.status === 401) throw new Error("auth");
+        if (!res.ok) throw new Error("load");
+        return res.json();
+      })
+      .then((data) => setWatchlist(data))
+      .catch((err) => setWatchlist({ error: err.message === "auth" ? "auth" : "load" }));
+  }, [token, language]);
+
+  useEffect(() => {
+    refreshWatchlist();
+  }, [refreshWatchlist]);
+
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
+
+  const alertCount = watchlist && !watchlist.error ? watchlist.alert_count : 0;
 
   return (
     <div>
@@ -159,7 +191,18 @@ function Dashboard() {
               end={tab.end}
               className={({ isActive }) => "dash-tab" + (isActive ? " active" : "")}
             >
-              {t(tab.labelKey)}
+              {tab.watchKey ? wt(language, tab.watchKey) : t(tab.labelKey)}
+              {/* number of watchlist alerts */}
+              {tab.watchKey && alertCount > 0 && (
+                <span
+                  style={{
+                    marginLeft: "6px", background: "#C0392B", color: "#fff", borderRadius: "10px",
+                    padding: "1px 7px", fontSize: "0.75rem", fontWeight: 700,
+                  }}
+                >
+                  {alertCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -179,6 +222,9 @@ function Dashboard() {
               harvestInfo,
               weather,
               production,
+              crops,
+              watchlist,
+              refreshWatchlist,
             }}
           />
         )}

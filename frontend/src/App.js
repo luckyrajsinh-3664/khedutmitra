@@ -8,6 +8,7 @@ import Overview from "./pages/dashboardPages/Overview";
 import PricesDemand from "./pages/dashboardPages/PricesDemand";
 import WeatherHarvest from "./pages/dashboardPages/WeatherHarvest";
 import Production from "./pages/dashboardPages/Production";
+import Watchlist from "./pages/dashboardPages/Watchlist";
 import { LanguageProvider } from "./i18n/LanguageContext";
 import "./App.css";
 import farmBg from "./farm-bg.jpg";
@@ -51,6 +52,7 @@ function App() {
               <Route path="prices" element={<PricesDemand />} />
               <Route path="weather" element={<WeatherHarvest />} />
               <Route path="production" element={<Production />} />
+              <Route path="watchlist" element={<Watchlist />} />
             </Route>
           </Routes>
         </div>

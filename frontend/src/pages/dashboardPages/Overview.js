@@ -2,12 +2,13 @@ import React from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { RISK_STYLES, DEMAND_STYLES } from "../../utils/dashboardHelpers";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { wt } from "../../i18n/watchlistText";
 
 // Overview tab: four small summary tiles ("today at a glance").
 // Each tile links to the tab that has the full details.
 function Overview() {
-  const { t, cropLabel, districtLabel, marketLabel, seasonLabel, monthsLabel } = useLanguage();
-  const { selectedCrop, forecast, arrival, harvestInfo, weather } = useOutletContext();
+  const { language, t, cropLabel, districtLabel, marketLabel, seasonLabel, monthsLabel } = useLanguage();
+  const { selectedCrop, forecast, arrival, harvestInfo, weather, watchlist } = useOutletContext();
 
   // ---- Price tile ----
   const forecastOk = forecast && !forecast.detail;
@@ -38,9 +39,28 @@ function Overview() {
 
   const harvestOk = harvestInfo && !harvestInfo.detail;
 
+  // ---- Watchlist alerts (target reached / forecast may reach it) ----
+  const alertCount = watchlist && !watchlist.error ? watchlist.alert_count : 0;
+
   return (
     <>
       <h2 className="overview-heading">{t("todayGlance", { crop: cropLabel(selectedCrop) })}</h2>
+
+      {/* Banner: shown only when the farmer has watchlist alerts */}
+      {alertCount > 0 && (
+        <Link
+          to="/dashboard/watchlist"
+          style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px",
+            background: "#E3F3E3", borderLeft: "4px solid #2F8F4E", borderRadius: "8px",
+            padding: "10px 14px", margin: "0 0 14px", color: "#1F3D22", textDecoration: "none",
+            fontSize: "0.95rem", fontWeight: 600,
+          }}
+        >
+          <span>🔔 {wt(language, "bannerText", { n: alertCount })}</span>
+          <span>{wt(language, "bannerLink")}</span>
+        </Link>
+      )}
 
       <div className="overview-grid">
         {/* Price tile */}
