@@ -2,7 +2,7 @@
 
 // Backend URL (change only here if you want to test against a local backend,
 // e.g. "http://127.0.0.1:8000")
-export const API_BASE = "http://127.0.0.1:8000";
+export const API_BASE = "https://khedutmitra-backend.onrender.com";
 
 // Colours for the rain-risk levels returned by /weather/{crop}.
 // (The wording now comes from the translations file: risk_low, risk_moderate, risk_high.)
