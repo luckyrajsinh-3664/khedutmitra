@@ -30,8 +30,10 @@ class LoginRequest(BaseModel):
 # What the chat box sends to the assistant
 class ChatRequest(BaseModel):
     question: str
-    crop: str | None = None        # crop selected on the dashboard (optional)
-    language: str | None = None    # "en" or "gu"; leave empty to detect from the question
+    crop: str | None = None            # crop selected on the dashboard (optional)
+    language: str | None = None        # "en" or "gu" if the farmer picked one in the chat box; empty = auto
+    app_language: str | None = None    # language the website is currently shown in
+    history: list[dict] | None = None  # earlier chat messages: [{"role": "user"|"bot", "text": "..."}]
 
 # Create the FastAPI app - this is the "server" object everything attaches to
 app = FastAPI(title="KhedutMitra API")
@@ -285,15 +287,18 @@ def production_statistics(commodity: str, lang: str = "en"):
 @app.post("/assistant/chat")
 def assistant_chat(data: ChatRequest, request: Request):
     """
-    AI assistant: answers a farmer's question (English or Gujarati) using only our
-    own price, weather, mandi and production facts. Always returns 200: if the
-    assistant is unavailable or the visitor is over the rate limit, 'available'
-    is False and 'message' explains why, so the chat box can show it.
+    AI assistant: answers a farmer's question (English, Gujarati, or Gujarati typed in English
+    letters) using our own price, weather, mandi and production facts, plus clearly labelled
+    general farming guidance. Always returns 200: if the assistant is unavailable or the visitor
+    is over the rate limit, 'available' is False and 'message' explains why, so the chat box can show it.
     """
     # Behind Render's proxy the real visitor address is in X-Forwarded-For
     forwarded = request.headers.get("x-forwarded-for", "")
     ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
-    return answer_question(data.question, data.crop, data.language, ip)
+    return answer_question(
+        data.question, data.crop, data.language, ip,
+        app_language=data.app_language, history=data.history, df=df,
+    )
 
 
 @app.post("/auth/register")

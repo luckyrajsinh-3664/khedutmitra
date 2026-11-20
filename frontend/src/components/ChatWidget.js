@@ -3,20 +3,21 @@ import { API_BASE, suggestedQuestions } from "../utils/dashboardHelpers";
 import { useLanguage } from "../i18n/LanguageContext";
 
 // The floating "Ask KhedutMitra" button + chat panel (available on every dashboard tab).
-// The chat language starts as the app language and follows it when the user switches.
+// Chat language "Auto": the backend replies in Gujarati if the question is in Gujarati script or
+// in Gujarati typed with English letters, otherwise in the language the website is shown in.
 function ChatWidget({ selectedCrop }) {
   const { language, t, cropLabel } = useLanguage();
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [chatLang, setChatLang] = useState(language);   // "auto", "en" or "gu"
+  const [chatLang, setChatLang] = useState("auto");     // "auto", "en" or "gu"
   const [messages, setMessages] = useState([]);         // {role: "user"|"bot", text, sources, error}
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef(null);
 
-  // When the app language changes, the chat language follows
+  // When the website language is switched, go back to Auto (Auto follows the website language)
   useEffect(() => {
-    setChatLang(language);
+    setChatLang("auto");
   }, [language]);
 
   // Keep the newest chat message in view
@@ -28,6 +29,12 @@ function ChatWidget({ selectedCrop }) {
   const sendQuestion = async (text) => {
     const question = (text !== undefined ? text : chatInput).trim();
     if (!question || chatLoading) return;
+
+    // The last 6 messages (before this question) give the assistant the context for follow-ups
+    const history = messages
+      .filter((m) => !m.error)
+      .slice(-6)
+      .map((m) => ({ role: m.role, text: m.text }));
 
     setMessages((prev) => [...prev, { role: "user", text: question }]);
     setChatInput("");
@@ -41,6 +48,8 @@ function ChatWidget({ selectedCrop }) {
           question,
           crop: selectedCrop,
           language: chatLang === "auto" ? null : chatLang,
+          app_language: language,
+          history,
         }),
       });
       const data = await res.json();
@@ -157,7 +166,7 @@ function ChatWidget({ selectedCrop }) {
                 </div>
                 {m.role === "bot" && !m.error && m.sources && m.sources.length > 0 && (
                   <div style={{ fontSize: "0.72rem", opacity: 0.6, margin: "4px 4px 0" }}>
-                    Based on: {m.sources.join(" · ")}
+                    {language === "gu" ? "આધાર:" : "Based on:"} {m.sources.join(" · ")}
                   </div>
                 )}
               </div>
