@@ -8,11 +8,19 @@ statistics (copy obtained via Kaggle).
 This is HISTORICAL CONTEXT (long-term trends, main producing districts),
 not current-season production. It is not used as a model input because its
 years (1997-2012) do not overlap with our price data (2021-2026).
+
+The text fields (message, note, source, basis) can be written in English or Gujarati ("lang").
+The district names inside top_districts stay English: the frontend translates them for display.
 """
 
 import os
 
 import pandas as pd
+
+try:
+    from backend.app.messages import msg, crop_label, district_label, normalise_lang
+except ModuleNotFoundError:   # when this file is run directly: python backend\app\production.py
+    from messages import msg, crop_label, district_label, normalise_lang
 
 PRODUCTION_FILE = os.path.join(os.path.dirname(__file__), "..", "..",
                                "data", "processed", "crop_production_gujarat.parquet")
@@ -41,18 +49,20 @@ def pretty_district(name):
     return DISTRICT_NAMES.get(str(name).strip().upper(), str(name).strip().title())
 
 
-def get_production_summary(crop):
+def get_production_summary(crop, lang="en"):
     """
     Production summary for one crop: state-wide yearly trend + top producing districts.
     Never raises, so it cannot crash the API.
     """
+    lang = normalise_lang(lang)
+
     if _df is None:
-        return {"available": False, "message": "Production statistics are temporarily unavailable."}
+        return {"available": False, "message": msg(lang, "prod_unavailable")}
 
     data = _df[_df["crop"] == crop]
     if data.empty:
         return {"available": False,
-                "message": f"Production statistics for {crop} are not available in our dataset."}
+                "message": msg(lang, "prod_no_data", crop=crop_label(lang, crop))}
 
     unit = data["unit"].iloc[0]
     last_year = int(data["year"].max())
@@ -89,10 +99,15 @@ def get_production_summary(crop):
     change_pct = round(float((late - early) / early * 100), 1) if early > 0 else None
 
     first_rows = top_districts[0]
-    message = (f"Between {first_year}-{first_year + 2} and {last_year - 2}-{last_year}, Gujarat's {crop} "
-               f"production {'rose' if change_pct and change_pct > 0 else 'fell'} by about "
-               f"{abs(change_pct)}% on average. {first_rows['district']} is the largest producing "
-               f"district ({first_rows['share_pct']}% of the state total).")
+    message = msg(
+        lang,
+        "prod_summary_up" if change_pct and change_pct > 0 else "prod_summary_down",
+        y1=first_year, y2=first_year + 2, y3=last_year - 2, y4=last_year,
+        crop=crop_label(lang, crop),
+        pct=abs(change_pct),
+        district=district_label(lang, first_rows["district"]),
+        share=first_rows["share_pct"],
+    )
 
     return {
         "available": True,
@@ -100,13 +115,13 @@ def get_production_summary(crop):
         "unit": unit,
         "first_year": first_year,
         "last_year": last_year,
-        "top_districts_basis": f"average of {last_year - years_used + 1}-{last_year}",
+        "top_districts_basis": msg(lang, "prod_basis", a=last_year - years_used + 1, b=last_year),
         "change_percent": change_pct,
         "message": message,
         "top_districts": top_districts,
         "yearly_trend": trend,
-        "note": "Historical statistics (1997-2012), shown for context. Not current-season production.",
-        "source": "Ministry of Agriculture & Farmers Welfare (district-wise Area, Production & Yield)",
+        "note": msg(lang, "prod_note"),
+        "source": msg(lang, "prod_source"),
     }
 
 

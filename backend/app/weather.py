@@ -10,6 +10,8 @@ Render server by default, because Open-Meteo rate-limits Render's shared IP
 
 Rule-based safety check, not an ML model: it does not change forecast accuracy,
 it makes the harvest advice safer.
+
+The sentences are written in English or Gujarati ("lang"), see messages.py.
 """
 
 import json
@@ -18,6 +20,11 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import requests
+
+try:
+    from backend.app.messages import msg, crop_label, normalise_lang
+except ModuleNotFoundError:   # when this file is run directly: python backend\app\weather.py
+    from messages import msg, crop_label, normalise_lang
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 FORECAST_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "processed", "forecast.json")
@@ -54,9 +61,9 @@ HEAVY_TOTAL_MM = 30.0    # 7-day total that makes harvesting risky
 # Identify ourselves politely to the free API
 HEADERS = {"User-Agent": "KhedutMitra/1.0 (PDEU student project)"}
 
-# Small in-memory cache for the live-call fallback only
+# Small in-memory cache for the live-call fallback only (one entry per district AND language)
 CACHE_SECONDS = 3600
-_cache = {}  # district -> (time fetched, result)
+_cache = {}  # (district, lang) -> (time fetched, result)
 
 
 def _fetch_live(district):
@@ -95,8 +102,8 @@ def _read_file(district):
         return None
 
 
-def _summarise(district, daily):
-    """Turn the raw 7-day numbers into a risk level and a plain-language message."""
+def _summarise(district, daily, lang="en"):
+    """Turn the raw 7-day numbers into a risk level and a plain-language message (English or Gujarati)."""
     days = []
     for i, date in enumerate(daily["time"]):
         days.append({
@@ -115,21 +122,17 @@ def _summarise(district, daily):
     if heavy is not None or total_rain >= HEAVY_TOTAL_MM:
         risk = "high"
         if heavy is None:
-            message = (f"About {total_rain} mm of rain is expected over the next 7 days. "
-                       "Delay harvesting and protect harvested produce.")
+            message = msg(lang, "weather_high_total", total=total_rain)
         elif heavy == 0:
-            message = (f"Heavy rain ({days[0]['rain_mm']} mm) is expected today. "
-                       "Do not harvest or dry produce in the open.")
+            message = msg(lang, "weather_heavy_today", mm=days[0]["rain_mm"])
         else:
-            message = (f"Heavy rain ({days[heavy]['rain_mm']} mm) is expected in {heavy} day(s). "
-                       "Delay harvesting or finish and cover produce before then.")
+            message = msg(lang, "weather_heavy_later", mm=days[heavy]["rain_mm"], days=heavy)
     elif wet_days >= 1:
         risk = "moderate"
-        message = (f"Some rain is expected ({wet_days} wet day(s), {total_rain} mm total). "
-                   "Harvest on dry days and keep produce covered.")
+        message = msg(lang, "weather_moderate", wet=wet_days, total=total_rain)
     else:
         risk = "low"
-        message = f"Mostly dry weather ahead ({total_rain} mm in 7 days). Good for harvesting."
+        message = msg(lang, "weather_low", total=total_rain)
 
     return {
         "available": True,
@@ -143,38 +146,41 @@ def _summarise(district, daily):
     }
 
 
-def get_weather_outlook(commodity):
+def get_weather_outlook(commodity, lang="en"):
     """Main function: 7-day rain outlook for a crop. Never raises, so it can't crash the API."""
+    lang = normalise_lang(lang)
+
     district = CROP_DISTRICT.get(commodity.strip().lower())
     if district is None:
-        return {"available": False, "message": f"No weather location configured for {commodity}."}
+        return {"available": False,
+                "message": msg(lang, "weather_no_location", crop=crop_label(lang, commodity))}
 
     # 1) Normal path: the file refreshed by the GitHub Action
     from_file = _read_file(district)
     if from_file:
         daily, updated_at = from_file
         try:
-            result = _summarise(district, daily)
+            result = _summarise(district, daily, lang)
             result["updated_at"] = updated_at
             return result
         except Exception as err:
             print(f"[weather] bad data in forecast.json for {district}: {err}")
 
     # 2) Fallback: live call (cached for an hour)
-    cached = _cache.get(district)
+    cached = _cache.get((district, lang))
     if cached and time.time() - cached[0] < CACHE_SECONDS:
         return cached[1]
 
     try:
-        result = _summarise(district, _fetch_live(district))
+        result = _summarise(district, _fetch_live(district), lang)
     except Exception as err:
         status = getattr(getattr(err, "response", None), "status_code", None)
         reason = f"HTTP {status}" if status else type(err).__name__
         print(f"[weather] live fetch failed for {district}: {reason} - {err}")
         return {"available": False, "district": district,
-                "message": f"Weather forecast is temporarily unavailable ({reason})."}
+                "message": msg(lang, "weather_unavailable", reason=reason)}
 
-    _cache[district] = (time.time(), result)
+    _cache[(district, lang)] = (time.time(), result)
     return result
 
 

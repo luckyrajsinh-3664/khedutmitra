@@ -2,9 +2,11 @@ import React from "react";
 import { useOutletContext } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { DEMAND_STYLES, formatDate } from "../../utils/dashboardHelpers";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 // Prices & Demand tab: price history, next-week forecast, demand indicator, best mandi.
 function PricesDemand() {
+  const { language, t, cropLabel, marketLabel } = useLanguage();
   const { selectedCrop, granularity, setGranularity, priceHistory, forecast, arrival, harvestInfo } = useOutletContext();
 
   // Forecast card colour: green only if rising by more than 1%, red only if
@@ -21,14 +23,16 @@ function PricesDemand() {
   }
 
   // Demand indicator: very small numbers carry little information
-  const demandStyle = arrival && !arrival.detail ? DEMAND_STYLES[arrival.direction] || DEMAND_STYLES.stable : null;
-  const lowVolume = arrival && !arrival.detail && arrival.current_arrivals < 5 && arrival.predicted_arrivals < 5;
+  const demandOk = arrival && !arrival.detail;
+  const demandDirection = demandOk ? (DEMAND_STYLES[arrival.direction] ? arrival.direction : "stable") : null;
+  const demandStyle = demandOk ? DEMAND_STYLES[demandDirection] : null;
+  const lowVolume = demandOk && arrival.current_arrivals < 5 && arrival.predicted_arrivals < 5;
 
   return (
     <>
       <div className="card">
         <div className="chart-header-row">
-          <h2 className="no-border">📊 Price History - {selectedCrop}</h2>
+          <h2 className="no-border">{t("priceHistory", { crop: cropLabel(selectedCrop) })}</h2>
           <div className="granularity-toggle">
             {["daily", "monthly", "yearly"].map((g) => (
               <button
@@ -36,7 +40,7 @@ function PricesDemand() {
                 className={`granularity-btn ${granularity === g ? "active" : ""}`}
                 onClick={() => setGranularity(g)}
               >
-                {g.charAt(0).toUpperCase() + g.slice(1)}
+                {t(g)}
               </button>
             ))}
           </div>
@@ -49,7 +53,7 @@ function PricesDemand() {
             <YAxis />
             <Tooltip formatter={(value) => value.toFixed(2)} />
             <Legend />
-            <Line type="monotone" dataKey="price" stroke="#2F5233" strokeWidth={2.5} name="Price (Rs./Quintal)" dot={false} />
+            <Line type="monotone" dataKey="price" stroke="#2F5233" strokeWidth={2.5} name={t("priceSeries")} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -57,7 +61,7 @@ function PricesDemand() {
       {/* Forecast card: normal case */}
       {forecast && !forecast.detail && (
         <div className="card">
-          <h2>Next Week Forecast</h2>
+          <h2>{t("nextWeekForecast")}</h2>
 
           {/* Warning after a sharp weekly move (the forecast is unreliable then) */}
           {forecast.sharp_move && (
@@ -71,47 +75,46 @@ function PricesDemand() {
                 fontSize: "0.9rem",
               }}
             >
-              <b>Prices moved sharply last week ({forecast.weekly_move_percent > 0 ? "+" : ""}{forecast.weekly_move_percent}%).</b>{" "}
-              This is unusual and often happens when only a few mandis report, so the forecast below is
-              unreliable. Please check today's price at your local mandi.
+              <b>{t("sharpBold", { pct: `${forecast.weekly_move_percent > 0 ? "+" : ""}${forecast.weekly_move_percent}` })}</b>{" "}
+              {t("sharpText")}
             </div>
           )}
 
           <div className="forecast-stats">
             <div className="stat-box">
-              <div className="stat-label">Current Price</div>
+              <div className="stat-label">{t("currentPrice")}</div>
               <div className="stat-value">₹{forecast.current_price.toFixed(2)}</div>
             </div>
             <div className={`stat-box ${trendClass}`}>
-              <div className="stat-label">Predicted Next Week</div>
+              <div className="stat-label">{t("predictedNextWeek")}</div>
               <div className="stat-value">₹{forecast.predicted_next_week_price.toFixed(2)}</div>
             </div>
           </div>
           <p style={{ margin: "12px 0 0", fontSize: "0.85rem", opacity: 0.75 }}>
-            Based on prices up to {formatDate(forecast.last_updated)}
+            {t("basedOn", { date: formatDate(forecast.last_updated, language) })}
             {forecast.method === "baseline"
-              ? " · Method: last week's price (best performer for this crop)"
+              ? t("methodBaseline")
               : forecast.method === "model"
-              ? " · Method: machine learning model"
+              ? t("methodModel")
               : ""}
           </p>
         </div>
       )}
 
-      {/* Forecast card: not available (e.g. no recent prices) */}
+      {/* Forecast card: not available (e.g. no recent prices). The text comes from the backend in the chosen language. */}
       {forecast && forecast.detail && (
         <div className="card">
-          <h2>Next Week Forecast</h2>
+          <h2>{t("nextWeekForecast")}</h2>
           <p style={{ margin: 0 }}>
-            {typeof forecast.detail === "string" ? forecast.detail : "Forecast not available."}
+            {typeof forecast.detail === "string" ? forecast.detail : t("forecastNA")}
           </p>
         </div>
       )}
 
       {/* Demand indicator card (expected arrivals next week) */}
-      {arrival && !arrival.detail && (
+      {demandOk && (
         <div className="card">
-          <h2>Market Demand Indicator</h2>
+          <h2>{t("demandCard")}</h2>
 
           <div
             style={{
@@ -123,32 +126,32 @@ function PricesDemand() {
             }}
           >
             <div style={{ fontWeight: 700, marginBottom: "4px" }}>
-              {demandStyle.label}
+              {t("demand_" + demandDirection)}
               {arrival.change_percent !== null && arrival.change_percent !== undefined
                 ? ` (${arrival.change_percent > 0 ? "+" : ""}${arrival.change_percent}%)`
                 : ""}
             </div>
-            <div>{lowVolume ? "Very little produce is arriving at the mandis for this crop right now." : demandStyle.text}</div>
+            <div>{lowVolume ? t("lowVolumeText") : t("demandText_" + demandDirection)}</div>
           </div>
 
           <div className="forecast-stats">
             <div className="stat-box">
-              <div className="stat-label">Arrived Week Ending {formatDate(arrival.week_ending)}</div>
-              <div className="stat-value">{arrival.current_arrivals.toLocaleString("en-IN")} t</div>
+              <div className="stat-label">{t("arrivedWeek", { date: formatDate(arrival.week_ending, language) })}</div>
+              <div className="stat-value">{arrival.current_arrivals.toLocaleString("en-IN")} {t("unitT")}</div>
             </div>
             <div className="stat-box">
-              <div className="stat-label">Expected Week Ending {formatDate(arrival.forecast_week_ending)}</div>
-              <div className="stat-value">{arrival.predicted_arrivals.toLocaleString("en-IN")} t</div>
+              <div className="stat-label">{t("expectedWeek", { date: formatDate(arrival.forecast_week_ending, language) })}</div>
+              <div className="stat-value">{arrival.predicted_arrivals.toLocaleString("en-IN")} {t("unitT")}</div>
             </div>
           </div>
 
           <p style={{ margin: "12px 0 0", fontSize: "0.8rem", opacity: 0.7 }}>
-            {lowVolume ? "Volumes this small are a weak signal. " : ""}
-            Tonnes arriving at the mandis that reported in this district (a demand indicator, not an exact count).
+            {lowVolume ? t("weakSignal") : ""}
+            {t("demandNote")}
             {arrival.method === "baseline"
-              ? " Method: same as last week (best performer for this crop)."
+              ? t("demandMethodBaseline")
               : arrival.method === "model"
-              ? " Method: machine learning model."
+              ? t("demandMethodModel")
               : ""}
           </p>
         </div>
@@ -157,21 +160,21 @@ function PricesDemand() {
       {/* Demand indicator: not available (hidden if the server has no such page yet) */}
       {arrival && arrival.detail && typeof arrival.detail === "string" && arrival.detail !== "Not Found" && (
         <div className="card">
-          <h2>Market Demand Indicator</h2>
+          <h2>{t("demandCard")}</h2>
           <p style={{ margin: 0 }}>{arrival.detail}</p>
         </div>
       )}
 
-      {/* Best mandi (moved here from the old Harvest card, it is a price topic) */}
+      {/* Best mandi */}
       {harvestInfo && !harvestInfo.detail && harvestInfo.best_mandi && (
         <div className="card">
-          <h2>Best Mandi Right Now</h2>
+          <h2>{t("bestMandiCard")}</h2>
           <div className="info-row">
-            <span className="label">Market</span>
-            <span className="value">{harvestInfo.best_mandi.best_market}</span>
+            <span className="label">{t("marketLabel")}</span>
+            <span className="value">{marketLabel(harvestInfo.best_mandi.best_market)}</span>
           </div>
           <div className="info-row">
-            <span className="label">Average price (last 90 days)</span>
+            <span className="label">{t("avgPrice90")}</span>
             <span className="value">₹{harvestInfo.best_mandi.best_avg_price.toFixed(2)}</span>
           </div>
         </div>

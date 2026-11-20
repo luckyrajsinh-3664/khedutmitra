@@ -7,6 +7,7 @@ from backend.app.auth import register_user, login_user
 from backend.app.weather import get_weather_outlook   # 7-day rain outlook
 from backend.app.production import get_production_summary   # historical production statistics
 from backend.app.assistant import answer_question   # Gemini AI assistant
+from backend.app.messages import msg, crop_label    # English / Gujarati sentences
 from pydantic import BaseModel
 
 from ml_pipeline.harvest_and_mandi import (
@@ -21,6 +22,7 @@ class RegisterRequest(BaseModel):
     mobile_number: str
     password: str
     district: str
+    language: str = "en"   # preferred language: "en" or "gu" (older clients may not send it)
 class LoginRequest(BaseModel):
     mobile_number: str
     password: str
@@ -159,7 +161,7 @@ def get_aggregated_prices(commodity: str, granularity: str = "daily", market: st
 
 
 @app.get("/forecast/price/{commodity}")
-def get_price_forecast(commodity: str):
+def get_price_forecast(commodity: str, lang: str = "en"):
     """
     Returns the forecast for NEXT week's price.
     Uses the saved ML model where one beat the baseline in our tests; for the other
@@ -168,6 +170,7 @@ def get_price_forecast(commodity: str):
     If the crop's latest price is too old (e.g. an off-season crop), we return a
     404 with an explanation instead of a misleading forecast.
     'sharp_move' is True when the weekly average jumped by more than 30%.
+    'lang' ("en" or "gu") sets the language of the explanation text.
     """
     # Match the crop name ignoring upper/lower case, e.g. "castor seed" -> "Castor Seed"
     crop_name = next((c for c in df["commodity"].unique() if c.lower() == commodity.lower()), None)
@@ -181,8 +184,8 @@ def get_price_forecast(commodity: str):
     if info["stale"]:
         raise HTTPException(
             status_code=404,
-            detail=(f"No recent prices for {crop_name} (last reported {info['last_updated']}, "
-                    f"about {info['weeks_old']} weeks ago). Forecast not available.")
+            detail=msg(lang, "forecast_stale", crop=crop_label(lang, crop_name),
+                       date=info["last_updated"], weeks=info["weeks_old"])
         )
 
     return {
@@ -199,12 +202,13 @@ def get_price_forecast(commodity: str):
 
 # NEW ENDPOINT (#14)
 @app.get("/forecast/arrival/{commodity}")
-def arrival_forecast(commodity: str):
+def arrival_forecast(commodity: str, lang: str = "en"):
     """
     Demand indicator: how many tonnes of the crop are expected to arrive in the mandis
     next week, and whether that is rising, falling or stable compared with last week.
     Uses the saved arrival model where one beat the baseline; otherwise "same as last week".
     A crop whose data is too old returns a 404 with an explanation.
+    'lang' ("en" or "gu") sets the language of the explanation text.
     """
     crop_name = next((c for c in df["commodity"].unique() if c.lower() == commodity.lower()), None)
     if crop_name is None:
@@ -217,20 +221,21 @@ def arrival_forecast(commodity: str):
     if info["stale"]:
         raise HTTPException(
             status_code=404,
-            detail=(f"No recent arrivals reported for {crop_name} (last reported {info['last_updated']}, "
-                    f"about {info['weeks_old']} weeks ago). Demand forecast not available.")
+            detail=msg(lang, "arrival_stale", crop=crop_label(lang, crop_name),
+                       date=info["last_updated"], weeks=info["weeks_old"])
         )
     return {"commodity": crop_name, **info}
 
 
 @app.get("/harvest-window/{commodity}")
-def harvest_window(commodity: str):
+def harvest_window(commodity: str, lang: str = "en"):
     """
     Returns the full harvest recommendation for a crop: typical sowing/
     harvest months, price forecast direction, best mandi, 7-day weather
     outlook, and plain-language advice - combining rule-based logic.
+    'lang' ("en" or "gu") sets the language of the advice text.
     """
-    result = get_harvest_recommendation(commodity)
+    result = get_harvest_recommendation(commodity, lang)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result
@@ -246,14 +251,15 @@ def best_mandi(commodity: str):
 
 
 @app.get("/weather/{commodity}")
-def weather_outlook(commodity: str):
+def weather_outlook(commodity: str, lang: str = "en"):
     """
     Returns the next 7 days of weather (rain, temperature) for the district
     where this crop is grown, plus a simple rain-risk level for harvesting.
     If the weather source is unavailable we still return 200 with available=False,
     so the dashboard keeps working without weather.
+    'lang' ("en" or "gu") sets the language of the message text.
     """
-    result = get_weather_outlook(commodity)
+    result = get_weather_outlook(commodity, lang)
     if not result["available"] and "district" not in result:
         # "district" is missing only when the crop name itself is unknown
         raise HTTPException(status_code=404, detail=result["message"])
@@ -261,18 +267,19 @@ def weather_outlook(commodity: str):
 
 
 @app.get("/production/{commodity}")
-def production_statistics(commodity: str):
+def production_statistics(commodity: str, lang: str = "en"):
     """
     Historical production statistics (1997-2012) for a crop in Gujarat: the
     state-wide yearly trend (production, area, yield) and the top producing
     districts. A crop we track but have no production data for (e.g. Cumin)
     returns 200 with available=False, so the dashboard can show a message.
+    'lang' ("en" or "gu") sets the language of the text fields.
     """
     # Match the crop name ignoring upper/lower case
     crop_name = next((c for c in df["commodity"].unique() if c.lower() == commodity.lower()), None)
     if crop_name is None:
         raise HTTPException(status_code=404, detail=f"No data found for crop: {commodity}")
-    return {"commodity": crop_name, **get_production_summary(crop_name)}
+    return {"commodity": crop_name, **get_production_summary(crop_name, lang)}
 
 
 @app.post("/assistant/chat")
@@ -291,8 +298,8 @@ def assistant_chat(data: ChatRequest, request: Request):
 
 @app.post("/auth/register")
 def register(data: RegisterRequest):
-    """Create a new farmer account."""
-    result = register_user(data.name, data.mobile_number, data.password, data.district)
+    """Create a new farmer account (including their preferred language)."""
+    result = register_user(data.name, data.mobile_number, data.password, data.district, data.language)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
     return result

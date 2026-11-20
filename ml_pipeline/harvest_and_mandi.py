@@ -22,6 +22,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from backend.app.weather import get_weather_outlook  # 7-day rain outlook
+from backend.app.messages import msg                 # English / Gujarati sentences
 
 DATA_PATH = "data/processed/mandi_prices_merged.parquet"
 MODELS_DIR = "backend/app/models"
@@ -334,10 +335,11 @@ def get_arrival_forecast(df, commodity):
             "change_percent": change_percent, "direction": direction, "method": method, "stale": False}
 
 
-def get_harvest_recommendation(commodity):
+def get_harvest_recommendation(commodity, lang="en"):
     """
     Combine crop calendar + price forecast + 7-day rain outlook into one
     plain-language recommendation for the farmer.
+    lang is "en" (default) or "gu": the advice and weather sentences are written in that language.
     """
     df = pd.read_parquet(DATA_PATH)
 
@@ -358,48 +360,42 @@ def get_harvest_recommendation(commodity):
     # Large single-week predicted swings are treated cautiously, since a
     # one-week model prediction can be noisy for volatile crops.
     if price_info is None:
-        advice = "Price forecast not available for this crop; recommendation based on seasonal calendar only."
+        advice = msg(lang, "advice_no_forecast")
     elif price_info["stale"]:
         # Latest price is too old to forecast from (off-season or not reported)
-        advice = (f"No recent prices are available for this crop (last reported {price_info['last_updated']}, "
-                  f"about {price_info['weeks_old']} weeks ago, probably off-season or not reported), "
-                  "so we cannot give a reliable price forecast.")
+        advice = msg(lang, "advice_stale", date=price_info["last_updated"], weeks=price_info["weeks_old"])
     elif price_info["sharp_move"]:
         # The weekly average jumped: usually only a few mandis reported, or one quoted unusual prices
-        advice = (f"Prices moved sharply last week ({price_info['weekly_move_percent']:+.0f}%). This is unusual and "
-                  "often happens when only a few mandis report, so we cannot give a reliable forecast. "
-                  "Please check today's price at your local mandi before deciding.")
+        advice = msg(lang, "advice_sharp", pct=f"{price_info['weekly_move_percent']:+.0f}")
     elif price_info["method"] == "baseline":
-        advice = (f"For this crop, last week's price (about Rs. {price_info['current_price']} per quintal) "
-                  "has been the most accurate predictor in our tests, so we expect prices to stay "
-                  "close to the current level.")
+        advice = msg(lang, "advice_baseline", price=price_info["current_price"])
     else:
         change = price_info["change_percent"]
         if abs(change) > 15:
-            advice = f"Our model predicts a large price swing ({change}% next week), but such large single-week changes are less reliable. Treat this as a signal to watch prices closely rather than a firm prediction."
+            advice = msg(lang, "advice_large_swing", change=change)
         elif change > 1:
-            advice = f"Prices are trending upward (+{change}% expected next week). If you have storage, consider holding stock for a slightly better price."
+            advice = msg(lang, "advice_up", change=change)
         elif change < -1:
-            advice = f"Prices are trending downward ({change}% expected next week). Consider selling soon rather than waiting."
+            advice = msg(lang, "advice_down", change=change)
         else:
-            advice = "Prices are expected to remain stable in the short term."
+            advice = msg(lang, "advice_stable")
 
     # ---- Rain-aware harvest advice (rule-based safety check) ----
     # Is today inside this crop's typical harvest months?
     in_harvest_season = get_current_month() in calendar["harvest_months"]
 
     # get_weather_outlook never raises; if the weather source is down it returns available=False
-    weather = get_weather_outlook(commodity)
+    weather = get_weather_outlook(commodity, lang)
 
     if weather["available"]:
         if in_harvest_season and weather["risk"] in ("moderate", "high"):
             # Harvest time + rain coming: this matters most, so put it first
-            advice = "WEATHER: " + weather["message"] + " " + advice
+            advice = msg(lang, "wx_first") + weather["message"] + " " + advice
         elif in_harvest_season:
-            advice = advice + " Weather: " + weather["message"]
+            advice = advice + msg(lang, "wx_mid") + weather["message"]
         elif weather["risk"] == "high":
             # Not harvest time, but heavy rain can still damage stored/drying produce
-            advice = advice + " Weather alert: " + weather["message"]
+            advice = advice + msg(lang, "wx_alert") + weather["message"]
 
     return {
         "commodity": commodity,

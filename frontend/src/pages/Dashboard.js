@@ -1,23 +1,26 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, NavLink, Outlet } from "react-router-dom";
 import SearchableSelect from "../components/SearchableSelect";
 import ChatWidget from "../components/ChatWidget";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 import { API_BASE } from "../utils/dashboardHelpers";
+import { useLanguage } from "../i18n/LanguageContext";
 import "./DashboardTabs.css";
 
-// The tabs shown under the crop selector. "end" makes Overview active only on /dashboard itself.
+// The tabs under the crop selector. "end" makes Overview active only on /dashboard itself.
+// labelKey is looked up in the translations file.
 const TABS = [
-  { to: "/dashboard",            label: "🏠 Overview",           end: true },
-  { to: "/dashboard/prices",     label: "📈 Prices & Demand" },
-  { to: "/dashboard/weather",    label: "🌦️ Weather & Harvest" },
-  { to: "/dashboard/production", label: "📚 Production" },
+  { to: "/dashboard",            labelKey: "tabOverview",   end: true },
+  { to: "/dashboard/prices",     labelKey: "tabPrices" },
+  { to: "/dashboard/weather",    labelKey: "tabWeather" },
+  { to: "/dashboard/production", labelKey: "tabProduction" },
 ];
 
-// Dashboard is now a LAYOUT: it keeps the topbar, crop selector, tab bar and chat,
+// Dashboard is a LAYOUT: it keeps the topbar, crop selector, tab bar and chat,
 // loads all the data for the selected crop, and shows the chosen tab inside <Outlet />.
-// The pages (in pages/dashboardPages) only display the data they receive.
 function Dashboard() {
   const navigate = useNavigate();
+  const { t, cropLabel, language } = useLanguage();
   const currentUser = JSON.parse(localStorage.getItem("currentUser"));
 
   const [crops, setCrops] = useState([]);
@@ -29,8 +32,14 @@ function Dashboard() {
   const [harvestInfo, setHarvestInfo] = useState(null);
   const [weather, setWeather] = useState(null);
   const [production, setProduction] = useState(null);
-  const [loading, setLoading] = useState(true);
 
+  // "loadedCrop" is the crop whose data has arrived. While it differs from the selected
+  // crop we show "Loading...". Changing only the LANGUAGE does not trigger the loading screen.
+  const [loadedCrop, setLoadedCrop] = useState(null);
+  const loading = loadedCrop !== selectedCrop;
+  const lastCropRef = useRef(selectedCrop);
+
+  // 1) The list of crops (once)
   useEffect(() => {
     fetch(`${API_BASE}/crops`)
       .then((res) => res.json())
@@ -38,58 +47,78 @@ function Dashboard() {
       .catch((err) => console.error(err));
   }, []);
 
+  // 2) Price history: depends on the crop and Daily/Monthly/Yearly only (no text, so no language)
   useEffect(() => {
-    // "cancelled" stops a slow, old response from overwriting the data of a
-    // crop the user has already switched away from
+    // "cancelled" stops a slow, old response from overwriting newer data
     let cancelled = false;
-    setLoading(true);
-    setWeather(null);
-    setProduction(null);
-    setArrival(null);
+    setPriceHistory([]);
 
     fetch(`${API_BASE}/prices-aggregated/${selectedCrop}?granularity=${granularity}`)
       .then((res) => res.json())
       .then((data) => { if (!cancelled) setPriceHistory(data.data); })
       .catch(() => { if (!cancelled) setPriceHistory([]); });
 
-    fetch(`${API_BASE}/forecast/price/${selectedCrop}`)
+    return () => { cancelled = true; };
+  }, [selectedCrop, granularity]);
+
+  // 3) Everything that contains sentences written by the backend: reloaded when the crop OR the
+  //    language changes, and the backend is asked for the sentences in that language (?lang=).
+  useEffect(() => {
+    let cancelled = false;
+
+    // A new crop: clear the old crop's data. (A language change keeps the cards on screen
+    // until the new text arrives, so the page does not flash.)
+    if (lastCropRef.current !== selectedCrop) {
+      lastCropRef.current = selectedCrop;
+      setLoadedCrop(null);
+      setForecast(null);
+      setArrival(null);
+      setHarvestInfo(null);
+      setWeather(null);
+      setProduction(null);
+    }
+
+    const q = `?lang=${language}`;
+
+    fetch(`${API_BASE}/forecast/price/${selectedCrop}${q}`)
       .then((res) => res.json())
       .then((data) => { if (!cancelled) setForecast(data); })
       .catch(() => { if (!cancelled) setForecast(null); });
 
     // Demand indicator (expected arrivals next week), loaded separately
-    fetch(`${API_BASE}/forecast/arrival/${selectedCrop}`)
+    fetch(`${API_BASE}/forecast/arrival/${selectedCrop}${q}`)
       .then((res) => res.json())
       .then((data) => { if (!cancelled) setArrival(data); })
       .catch(() => { if (!cancelled) setArrival(null); });
 
     // Weather loads separately, so a slow weather call never blocks the page
-    fetch(`${API_BASE}/weather/${selectedCrop}`)
+    fetch(`${API_BASE}/weather/${selectedCrop}${q}`)
       .then((res) => res.json())
       .then((data) => { if (!cancelled) setWeather(data); })
       .catch(() => { if (!cancelled) setWeather(null); });
 
     // Historical production statistics (also loaded separately)
-    fetch(`${API_BASE}/production/${selectedCrop}`)
+    fetch(`${API_BASE}/production/${selectedCrop}${q}`)
       .then((res) => res.json())
       .then((data) => { if (!cancelled) setProduction(data); })
       .catch(() => { if (!cancelled) setProduction(null); });
 
-    fetch(`${API_BASE}/harvest-window/${selectedCrop}`)
+    // The harvest advice finishing is what ends the "Loading..." screen
+    fetch(`${API_BASE}/harvest-window/${selectedCrop}${q}`)
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
         setHarvestInfo(data);
-        setLoading(false);
+        setLoadedCrop(selectedCrop);
       })
       .catch(() => {
         if (cancelled) return;
         setHarvestInfo(null);
-        setLoading(false);
+        setLoadedCrop(selectedCrop);
       });
 
     return () => { cancelled = true; };
-  }, [selectedCrop, granularity]);
+  }, [selectedCrop, language]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -101,40 +130,42 @@ function Dashboard() {
       <div className="dashboard-topbar">
         <h2 onClick={() => navigate("/")} style={{ cursor: "pointer" }}>🌾 KhedutMitra</h2>
         <div className="topbar-right">
-          <span className="greeting">Namaste, {currentUser?.name || "Farmer"}</span>
-          <button className="btn-logout" onClick={handleLogout}>Logout</button>
+          <span className="greeting">{t("greeting", { name: currentUser?.name || t("farmer") })}</span>
+          <LanguageSwitcher />
+          <button className="btn-logout" onClick={handleLogout}>{t("logout")}</button>
         </div>
       </div>
 
       <div className="dashboard-container">
         <div className="crop-selector">
-          <label>🌾 Select Crop:</label>
+          <label>{t("selectCrop")}</label>
           <div style={{ flex: 1, maxWidth: "240px" }}>
             <SearchableSelect
               options={crops}
               value={selectedCrop}
               onChange={setSelectedCrop}
-              placeholder="Select a crop"
+              placeholder={t("selectCropPlaceholder")}
+              getLabel={cropLabel}
             />
           </div>
         </div>
 
         {/* Tab bar */}
         <nav className="dash-tabs">
-          {TABS.map((t) => (
+          {TABS.map((tab) => (
             <NavLink
-              key={t.to}
-              to={t.to}
-              end={t.end}
+              key={tab.to}
+              to={tab.to}
+              end={tab.end}
               className={({ isActive }) => "dash-tab" + (isActive ? " active" : "")}
             >
-              {t.label}
+              {t(tab.labelKey)}
             </NavLink>
           ))}
         </nav>
 
         {loading ? (
-          <p className="loading-text">Loading data for {selectedCrop}...</p>
+          <p className="loading-text">{t("loadingData", { crop: cropLabel(selectedCrop) })}</p>
         ) : (
           // The selected tab's page appears here and receives this data via context
           <Outlet
