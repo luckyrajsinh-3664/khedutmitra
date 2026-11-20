@@ -4,6 +4,10 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
+import Overview from "./pages/dashboardPages/Overview";
+import PricesDemand from "./pages/dashboardPages/PricesDemand";
+import WeatherHarvest from "./pages/dashboardPages/WeatherHarvest";
+import Production from "./pages/dashboardPages/Production";
 import "./App.css";
 import farmBg from "./farm-bg.jpg";
 
@@ -30,6 +34,8 @@ function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+
+          {/* Dashboard is a layout; each tab is a nested route shown inside its <Outlet /> */}
           <Route
             path="/dashboard"
             element={
@@ -37,7 +43,12 @@ function App() {
                 <Dashboard />
               </ProtectedRoute>
             }
-          />
+          >
+            <Route index element={<Overview />} />
+            <Route path="prices" element={<PricesDemand />} />
+            <Route path="weather" element={<WeatherHarvest />} />
+            <Route path="production" element={<Production />} />
+          </Route>
         </Routes>
       </div>
     </BrowserRouter>

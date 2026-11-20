@@ -1,0 +1,101 @@
+/* Styles for the dashboard tab bar and the Overview summary tiles.
+   Uses the colour variables already defined in App.css. */
+
+/* ===== Tab bar ===== */
+.dash-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 22px;
+  background: rgba(255, 251, 243, 0.97);
+  padding: 6px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  overflow-x: auto;           /* on small screens the tabs scroll sideways */
+}
+
+.dash-tab {
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+  padding: 11px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--color-text-light);
+  transition: all 0.15s;
+}
+
+.dash-tab:hover {
+  color: var(--color-primary-dark);
+}
+
+.dash-tab.active {
+  background: var(--color-primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(47, 82, 51, 0.3);
+}
+
+/* ===== Overview page ===== */
+.overview-heading {
+  color: white;
+  font-size: 18px;
+  margin: 0 0 14px;
+  text-shadow: 1px 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.summary-tile {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(255, 251, 243, 0.97);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.15s, box-shadow 0.15s;
+  animation: fadeUp 0.4s ease;
+}
+
+.summary-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-soft);
+}
+
+.tile-title {
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  color: var(--color-text-light);
+  margin-bottom: 8px;
+}
+
+.tile-main {
+  font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--color-primary-dark);
+}
+
+.tile-main.up   { color: var(--color-success); }
+.tile-main.down { color: var(--color-danger); }
+
+.tile-sub {
+  font-size: 13.5px;
+  margin-top: 6px;
+  color: var(--color-text-light);
+}
+
+.tile-link {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-accent-dark);
+  margin-top: 12px;
+}
