@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+import json
 import pandas as pd
 import os
 
@@ -53,6 +54,47 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 # Load the dataset once when the server starts (not on every request - that would be slow)
 df = pd.read_parquet(DATA_PATH)
+
+# Forecast ranges per crop, made by ml_pipeline/compute_intervals.py.
+# If the file is missing the API still works, it just shows no range.
+try:
+    with open(os.path.join(MODELS_DIR, "forecast_intervals.json"), encoding="utf-8") as f:
+        INTERVALS = json.load(f)
+except Exception as err:
+    print(f"[main] forecast_intervals.json not loaded: {err}")
+    INTERVALS = {}
+
+# Text shown next to the range (English / Gujarati)
+RANGE_TEXT = {
+    "en": {
+        "label": "Likely range",
+        "note": "In past tests, the real price was within +/-{pct}% of the forecast in about {level}% of weeks. "
+                "This range is based on past errors; it is not a guarantee.",
+    },
+    "gu": {
+        "label": "સંભવિત શ્રેણી",
+        "note": "ભૂતકાળના પરીક્ષણોમાં લગભગ {level}% અઠવાડિયામાં વાસ્તવિક ભાવ આગાહીથી +/-{pct}% ની અંદર રહ્યો હતો. "
+                "આ શ્રેણી ભૂતકાળની ભૂલો પર આધારિત છે, તે ખાતરી નથી.",
+    },
+}
+
+
+def _forecast_range(crop_name, predicted, lang):
+    """The likely range around next week's forecast ({} if we have no range for this crop)."""
+    entry = INTERVALS.get("crops", {}).get(crop_name)
+    if not entry or predicted is None:
+        return {}
+    pct = entry["half_width_pct"]
+    level = INTERVALS.get("level_pct", 80)
+    text = RANGE_TEXT["gu" if lang == "gu" else "en"]
+    return {
+        "range_low": round(predicted * (1 - pct / 100), 2),
+        "range_high": round(predicted * (1 + pct / 100), 2),
+        "range_half_width_pct": pct,
+        "range_level_pct": level,
+        "range_label": text["label"],
+        "range_note": text["note"].format(pct=pct, level=level),
+    }
 
 
 @app.get("/")
@@ -165,10 +207,12 @@ def get_aggregated_prices(commodity: str, granularity: str = "daily", market: st
 @app.get("/forecast/price/{commodity}")
 def get_price_forecast(commodity: str, lang: str = "en"):
     """
-    Returns the forecast for NEXT week's price.
+    Returns the forecast for NEXT week's price, with a "likely range" around it.
     Uses the saved ML model where one beat the baseline in our tests; for the other
     crops (Groundnut, Castor Seed, Cumin) the forecast is the baseline
     "next week = this week". The 'method' field says which one was used.
+    The range (range_low / range_high) comes from how far past forecasts missed the real price;
+    it is left out after a sharp weekly move, because the forecast is unreliable then.
     If the crop's latest price is too old (e.g. an off-season crop), we return a
     404 with an explanation instead of a misleading forecast.
     'sharp_move' is True when the weekly average jumped by more than 30%.
@@ -199,6 +243,7 @@ def get_price_forecast(commodity: str, lang: str = "en"):
         "sharp_move": info["sharp_move"],
         "weekly_move_percent": info["weekly_move_percent"],
         "last_updated": info["last_updated"],
+        **({} if info["sharp_move"] else _forecast_range(crop_name, info["predicted_price"], lang)),
     }
 
 

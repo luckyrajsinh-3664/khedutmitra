@@ -1,0 +1,60 @@
+{
+  "level_pct": 80,
+  "created": "2026-11-20",
+  "crops": {
+    "Bajra": {
+      "half_width_pct": 4.44,
+      "test_weeks": 58,
+      "method": "model",
+      "mape_pct": 2.44
+    },
+    "Castor Seed": {
+      "half_width_pct": 1.97,
+      "test_weeks": 59,
+      "method": "baseline",
+      "mape_pct": 1.42
+    },
+    "Chickpea": {
+      "half_width_pct": 4.97,
+      "test_weeks": 37,
+      "method": "model",
+      "mape_pct": 3.24
+    },
+    "Cotton": {
+      "half_width_pct": 4.28,
+      "test_weeks": 43,
+      "method": "model",
+      "mape_pct": 3.16
+    },
+    "Cumin": {
+      "half_width_pct": 3.12,
+      "test_weeks": 59,
+      "method": "baseline",
+      "mape_pct": 2.13
+    },
+    "Groundnut": {
+      "half_width_pct": 3.01,
+      "test_weeks": 58,
+      "method": "baseline",
+      "mape_pct": 1.96
+    },
+    "Mustard": {
+      "half_width_pct": 11.3,
+      "test_weeks": 37,
+      "method": "model",
+      "mape_pct": 7.84
+    },
+    "Sesame": {
+      "half_width_pct": 13.62,
+      "test_weeks": 47,
+      "method": "model",
+      "mape_pct": 8.59
+    },
+    "Wheat": {
+      "half_width_pct": 1.88,
+      "test_weeks": 59,
+      "method": "model",
+      "mape_pct": 1.28
+    }
+  }
+}

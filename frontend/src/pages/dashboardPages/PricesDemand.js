@@ -90,6 +90,15 @@ function PricesDemand() {
               <div className="stat-value">₹{forecast.predicted_next_week_price.toFixed(2)}</div>
             </div>
           </div>
+
+          {/* Likely range around the forecast (text comes from the backend in the chosen language) */}
+          {forecast.range_low !== undefined && forecast.range_low !== null && (
+            <div style={{ marginTop: "14px", fontSize: "0.92rem" }}>
+              <b>{forecast.range_label}:</b> ₹{forecast.range_low.toFixed(2)} – ₹{forecast.range_high.toFixed(2)}
+              <div style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: "4px" }}>{forecast.range_note}</div>
+            </div>
+          )}
+
           <p style={{ margin: "12px 0 0", fontSize: "0.85rem", opacity: 0.75 }}>
             {t("basedOn", { date: formatDate(forecast.last_updated, language) })}
             {forecast.method === "baseline"
