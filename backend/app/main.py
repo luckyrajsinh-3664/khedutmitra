@@ -9,6 +9,7 @@ from backend.app.weather import get_weather_outlook   # 7-day rain outlook
 from backend.app.production import get_production_summary   # historical production statistics
 from backend.app.assistant import answer_question   # Gemini AI assistant
 from backend.app.messages import msg, crop_label    # English / Gujarati sentences
+from backend.app.watchlist import create_watchlist_router   # My Watchlist + alerts (needs login)
 from pydantic import BaseModel
 
 from ml_pipeline.harvest_and_mandi import (
@@ -54,6 +55,9 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 # Load the dataset once when the server starts (not on every request - that would be slow)
 df = pd.read_parquet(DATA_PATH)
+
+# The watchlist endpoints (/watchlist) live in watchlist.py; they need the login token
+app.include_router(create_watchlist_router(df))
 
 # Forecast ranges per crop, made by ml_pipeline/compute_intervals.py.
 # If the file is missing the API still works, it just shows no range.

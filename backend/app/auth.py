@@ -10,7 +10,7 @@ import secrets
 import bcrypt
 from datetime import datetime, timedelta
 from pymongo import MongoClient
-from jose import jwt
+from jose import jwt, JWTError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -61,6 +61,18 @@ def create_access_token(mobile_number):
     payload = {"sub": mobile_number, "exp": expire}
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return token
+
+
+def verify_token(token):
+    """
+    Check a login token. Returns the farmer's mobile number if the token is genuine and not
+    expired, otherwise None. (Signature and expiry are both checked by the jose library.)
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("sub")
+    except JWTError:
+        return None
 
 
 def register_user(name, mobile_number, password, district, language="en"):
