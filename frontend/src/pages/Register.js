@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import SearchableSelect from "../components/SearchableSelect";
+import LanguageSwitcher from "../components/LanguageSwitcher";
+import { API_BASE } from "../utils/dashboardHelpers";
+import { useLanguage } from "../i18n/LanguageContext";
 
-const API_BASE = "https://khedutmitra-backend.onrender.com";
-
-// List of Gujarat districts for the dropdown
+// List of Gujarat districts for the dropdown (English values are what we store)
 const DISTRICTS = [
   "Ahmedabad", "Amreli", "Anand", "Aravalli", "Banaskantha", "Bharuch",
   "Bhavnagar", "Botad", "Chhota Udepur", "Dahod", "Dang", "Devbhoomi Dwarka",
@@ -16,6 +17,8 @@ const DISTRICTS = [
 
 function Register() {
   const navigate = useNavigate();
+  // "language" is the preferred language: the picker below changes it for the whole app
+  const { language, t, te, districtLabel } = useLanguage();
 
   // Form fields
   const [name, setName] = useState("");
@@ -34,15 +37,15 @@ function Register() {
 
     // Basic validation before sending to the server
     if (mobile.length !== 10 || !/^\d+$/.test(mobile)) {
-      setError("Please enter a valid 10-digit mobile number.");
+      setError(t("errMobile"));
       return;
     }
     if (password.length < 6) {
-      setError("Password must be at least 6 characters long.");
+      setError(t("errPasswordShort"));
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(t("errPasswordMatch"));
       return;
     }
 
@@ -55,14 +58,15 @@ function Register() {
           name,
           mobile_number: mobile,
           password,
-          district
+          district,
+          language   // preferred language ("en" or "gu"), saved with the account
         })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.detail || "Registration failed. Please try again.");
+        setError(data.detail ? te(data.detail) : t("registerFailed"));
         setLoading(false);
         return;
       }
@@ -71,55 +75,61 @@ function Register() {
       localStorage.setItem("currentUser", JSON.stringify({ name: data.name, token: data.token }));
       navigate("/dashboard");
     } catch (err) {
-      setError("Could not connect to the server. Please try again.");
+      setError(t("connectError"));
       setLoading(false);
     }
   };
 
   return (
     <div className="glass-card">
-      <h2>🌱 Create Your Account</h2>
+      <h2>{t("createAccount")}</h2>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label>Full Name</label>
+          <label>{t("preferredLanguage")}</label>
+          <LanguageSwitcher />
+        </div>
+
+        <div className="form-group">
+          <label>{t("fullName")}</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Enter your full name"
+            placeholder={t("namePlaceholder")}
             required
           />
         </div>
 
         <div className="form-group">
-          <label>Mobile Number</label>
+          <label>{t("mobileNumber")}</label>
           <input
             type="tel"
             value={mobile}
             onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            placeholder="10-digit mobile number"
+            placeholder={t("mobilePlaceholder")}
             required
           />
         </div>
 
         <div className="form-group">
-            <label>District</label>
-            <SearchableSelect
-                options={DISTRICTS}
-                value={district}
-                onChange={setDistrict}
-                placeholder="Select your district"
-            />
+          <label>{t("district")}</label>
+          <SearchableSelect
+            options={DISTRICTS}
+            value={district}
+            onChange={setDistrict}
+            placeholder={t("districtPlaceholder")}
+            getLabel={districtLabel}
+          />
         </div>
 
         <div className="form-group">
-          <label>Create Password</label>
+          <label>{t("createPassword")}</label>
           <div className="password-field">
             <input
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
+              placeholder={t("passwordHint")}
               required
             />
             <button
@@ -133,13 +143,13 @@ function Register() {
         </div>
 
         <div className="form-group">
-          <label>Confirm Password</label>
+          <label>{t("confirmPassword")}</label>
           <div className="password-field">
             <input
               type={showPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Re-enter your password"
+              placeholder={t("confirmPlaceholder")}
               required
             />
           </div>
@@ -148,12 +158,12 @@ function Register() {
         {error && <p className="error-text">{error}</p>}
 
         <button type="submit" className="btn-primary" disabled={loading}>
-          {loading ? "Creating account..." : "Register"}
+          {loading ? t("creatingAccount") : t("registerBtn")}
         </button>
       </form>
 
       <p className="switch-link">
-        Already have an account? <Link to="/login">Login here</Link>
+        {t("haveAccount")} <Link to="/login">{t("loginHere")}</Link>
       </p>
     </div>
   );

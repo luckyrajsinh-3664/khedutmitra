@@ -1,0 +1,50 @@
+/* Language switch buttons + a font that has Gujarati letters.
+   The Gujarati font (Noto Sans Gujarati) is loaded in public/index.html. */
+
+body,
+button {
+  font-family: 'Inter', 'Noto Sans Gujarati', 'Segoe UI', Arial, sans-serif;
+}
+
+h1, h2, h3 {
+  font-family: 'Poppins', 'Noto Sans Gujarati', 'Segoe UI', Arial, sans-serif;
+}
+
+.lang-switcher {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--color-cream-dark);
+  padding: 3px;
+  border-radius: 20px;
+}
+
+.lang-btn {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-light);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.lang-btn:hover {
+  color: var(--color-primary-dark);
+}
+
+.lang-btn.active {
+  background: var(--color-primary);
+  color: white;
+  box-shadow: 0 2px 6px rgba(47, 82, 51, 0.3);
+}
+
+/* On Landing and Login the switcher floats in the top-right corner */
+.lang-switcher.floating {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}

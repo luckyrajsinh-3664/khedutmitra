@@ -1,35 +1,36 @@
 // Shared constants and small helper functions used by the dashboard pages.
-// Keeping them in one place means every page uses the same colours and date formats.
 
 // Backend URL (change only here if you want to test against a local backend,
 // e.g. "http://127.0.0.1:8000")
-export const API_BASE = "https://khedutmitra-backend.onrender.com";
+export const API_BASE = "http://127.0.0.1:8000";
 
-// Colours and labels for the rain-risk levels returned by /weather/{crop}
+// Colours for the rain-risk levels returned by /weather/{crop}.
+// (The wording now comes from the translations file: risk_low, risk_moderate, risk_high.)
 export const RISK_STYLES = {
-  low:      { bg: "#E8F3E6", border: "#2F5233", label: "Low rain risk" },
-  moderate: { bg: "#FFF3DC", border: "#E0A030", label: "Moderate rain risk" },
-  high:     { bg: "#FBE4E1", border: "#C0392B", label: "High rain risk" },
+  low:      { bg: "#E8F3E6", border: "#2F5233" },
+  moderate: { bg: "#FFF3DC", border: "#E0A030" },
+  high:     { bg: "#FBE4E1", border: "#C0392B" },
 };
 
-// Colours and wording for the demand (arrivals) trend
+// Colours for the demand (arrivals) trend
+// (Wording: demand_rising / demandText_rising etc. in the translations file.)
 export const DEMAND_STYLES = {
-  rising:  { bg: "#E8F3E6", border: "#2F5233", label: "Arrivals rising",  text: "More produce is expected at the mandi next week." },
-  stable:  { bg: "#F1EEE6", border: "#8A8470", label: "Arrivals stable",  text: "Arrivals are expected to stay about the same next week." },
-  falling: { bg: "#FFF3DC", border: "#E0A030", label: "Arrivals falling", text: "Less produce is expected at the mandi next week." },
+  rising:  { bg: "#E8F3E6", border: "#2F5233" },
+  stable:  { bg: "#F1EEE6", border: "#8A8470" },
+  falling: { bg: "#FFF3DC", border: "#E0A030" },
 };
 
-// "2026-09-27" -> "27 Sep 2026"
-export function formatDate(iso) {
+// "2026-09-27" -> "27 Sep 2026" (month names follow the chosen language)
+export function formatDate(iso, language = "en") {
   if (!iso) return "";
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", {
+  return new Date(iso + "T00:00:00").toLocaleDateString(language === "gu" ? "gu-IN" : "en-IN", {
     day: "numeric", month: "short", year: "numeric",
   });
 }
 
 // "2026-10-14" -> "Wed, 14 Oct"
-export function formatDay(iso) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", {
+export function formatDay(iso, language = "en") {
+  return new Date(iso + "T00:00:00").toLocaleDateString(language === "gu" ? "gu-IN" : "en-IN", {
     weekday: "short", day: "numeric", month: "short",
   });
 }

@@ -1,16 +1,23 @@
 import React, { useState, useEffect, useRef } from "react";
 import { API_BASE, suggestedQuestions } from "../utils/dashboardHelpers";
+import { useLanguage } from "../i18n/LanguageContext";
 
-// The floating "Ask KhedutMitra" button + chat panel.
-// It lives in the Dashboard layout, so it stays available on every tab.
-// selectedCrop is sent to the backend so the farmer does not have to type the crop name.
+// The floating "Ask KhedutMitra" button + chat panel (available on every dashboard tab).
+// The chat language starts as the app language and follows it when the user switches.
 function ChatWidget({ selectedCrop }) {
+  const { language, t, cropLabel } = useLanguage();
+
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [chatLang, setChatLang] = useState("auto");   // "auto", "en" or "gu"
-  const [messages, setMessages] = useState([]);       // {role: "user"|"bot", text, sources, error}
+  const [chatLang, setChatLang] = useState(language);   // "auto", "en" or "gu"
+  const [messages, setMessages] = useState([]);         // {role: "user"|"bot", text, sources, error}
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef(null);
+
+  // When the app language changes, the chat language follows
+  useEffect(() => {
+    setChatLang(language);
+  }, [language]);
 
   // Keep the newest chat message in view
   useEffect(() => {
@@ -42,19 +49,17 @@ function ChatWidget({ selectedCrop }) {
       } else {
         setMessages((prev) => [
           ...prev,
-          { role: "bot", text: data.message || "Sorry, I could not answer that. Please try again.", error: true },
+          { role: "bot", text: data.message || t("chatErrDefault"), error: true },
         ]);
       }
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "bot", text: "Could not reach the server. Please check your internet and try again.", error: true },
-      ]);
+      setMessages((prev) => [...prev, { role: "bot", text: t("chatErrServer"), error: true }]);
     }
     setChatLoading(false);
   };
 
-  const chipLang = chatLang === "gu" ? "gu" : "en";
+  // Language used for the suggested-question chips
+  const chipLang = chatLang === "auto" ? language : chatLang;
 
   return (
     <>
@@ -68,7 +73,7 @@ function ChatWidget({ selectedCrop }) {
             boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
           }}
         >
-          💬 Ask KhedutMitra
+          {t("askButton")}
         </button>
       )}
 
@@ -84,8 +89,8 @@ function ChatWidget({ selectedCrop }) {
           {/* header */}
           <div style={{ background: "#2F5233", color: "#fff", padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{ fontWeight: 700 }}>🌾 Ask KhedutMitra</div>
-              <div style={{ fontSize: "0.78rem", opacity: 0.85 }}>About: {selectedCrop}</div>
+              <div style={{ fontWeight: 700 }}>{t("chatTitle")}</div>
+              <div style={{ fontSize: "0.78rem", opacity: 0.85 }}>{t("chatAbout", { crop: cropLabel(selectedCrop) })}</div>
             </div>
             <button
               onClick={() => setChatOpen(false)}
@@ -98,7 +103,7 @@ function ChatWidget({ selectedCrop }) {
 
           {/* language switch */}
           <div style={{ display: "flex", gap: "6px", padding: "8px 12px", background: "#F3F6F1", borderBottom: "1px solid #E0E6DC" }}>
-            {[["auto", "Auto"], ["en", "English"], ["gu", "ગુજરાતી"]].map(([code, label]) => (
+            {[["auto", t("chatAuto")], ["en", "English"], ["gu", "ગુજરાતી"]].map(([code, label]) => (
               <button
                 key={code}
                 onClick={() => setChatLang(code)}
@@ -119,9 +124,7 @@ function ChatWidget({ selectedCrop }) {
             {messages.length === 0 && (
               <div style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>
                 <div style={{ marginBottom: "10px" }}>
-                  {chipLang === "gu"
-                    ? `${selectedCrop} માટે ભાવ, માર્કેટ યાર્ડ, વરસાદ અને કાપણી વિશે પૂછો.`
-                    : `Ask me about prices, mandis, rain and harvest timing for ${selectedCrop}. You can write in English or Gujarati.`}
+                  {t("chatIntro", { crop: cropLabel(selectedCrop) })}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {suggestedQuestions(chipLang, selectedCrop).map((q) => (
@@ -162,7 +165,7 @@ function ChatWidget({ selectedCrop }) {
 
             {chatLoading && (
               <div style={{ alignSelf: "flex-start", maxWidth: "88%", padding: "9px 12px", borderRadius: "12px", background: "#EEF3EC", fontSize: "0.85rem" }}>
-                Thinking... (the first answer can take up to a minute while the server wakes up)
+                {t("chatThinking")}
               </div>
             )}
             <div ref={chatEndRef} />
@@ -177,7 +180,7 @@ function ChatWidget({ selectedCrop }) {
                 maxLength={500}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") sendQuestion(); }}
-                placeholder={chatLang === "gu" ? "તમારો પ્રશ્ન લખો..." : "Type your question..."}
+                placeholder={t("chatPlaceholder")}
                 style={{ flex: 1, padding: "9px 12px", borderRadius: "20px", border: "1px solid #C9D6C4", fontSize: "0.9rem", outline: "none" }}
               />
               <button
@@ -188,11 +191,11 @@ function ChatWidget({ selectedCrop }) {
                   background: chatLoading || !chatInput.trim() ? "#A9B8A5" : "#2F5233", color: "#fff",
                 }}
               >
-                Send
+                {t("chatSend")}
               </button>
             </div>
             <div style={{ fontSize: "0.7rem", opacity: 0.6, marginTop: "6px" }}>
-              Answers use past data and forecasts. They are suggestions, not guarantees.
+              {t("chatDisclaimer")}
             </div>
           </div>
         </div>

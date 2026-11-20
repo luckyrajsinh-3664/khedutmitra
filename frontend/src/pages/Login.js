@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-
-const API_BASE = "https://khedutmitra-backend.onrender.com";
+import { API_BASE } from "../utils/dashboardHelpers";
+import { useLanguage } from "../i18n/LanguageContext";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 function Login() {
   const navigate = useNavigate();
+  const { t, te, setLanguage } = useLanguage();
 
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
@@ -27,42 +29,46 @@ function Login() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.detail || "Login failed. Please try again.");
+        setError(data.detail ? te(data.detail) : t("loginFailed"));
         setLoading(false);
         return;
       }
 
       localStorage.setItem("currentUser", JSON.stringify({ name: data.name, token: data.token }));
+      // Open the app in the language the farmer chose when registering
+      if (data.language) setLanguage(data.language);
       navigate("/dashboard");
     } catch (err) {
-      setError("Could not connect to the server. Please try again.");
+      setError(t("connectError"));
       setLoading(false);
     }
   };
 
   return (
     <div className="glass-card">
-      <h2>| Welcome Back</h2>
+      <LanguageSwitcher floating />
+
+      <h2>| {t("loginTitle")}</h2>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label>Mobile Number</label>
+          <label>{t("mobileNumber")}</label>
           <input
             type="tel"
             value={mobile}
             onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            placeholder="10-digit mobile number"
+            placeholder={t("mobilePlaceholder")}
             required
           />
         </div>
 
         <div className="form-group">
-          <label>Password</label>
+          <label>{t("password")}</label>
           <div className="password-field">
             <input
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder={t("passwordPlaceholder")}
               required
             />
             <button
@@ -78,12 +84,12 @@ function Login() {
         {error && <p className="error-text">{error}</p>}
 
         <button type="submit" className="btn-primary" disabled={loading}>
-          {loading ? "Logging in..." : "Login"}
+          {loading ? t("loggingIn") : t("loginBtn")}
         </button>
       </form>
 
       <p className="switch-link">
-        New farmer? <Link to="/register">Create an account</Link>
+        {t("newFarmer")} <Link to="/register">{t("createAccountLink")}</Link>
       </p>
     </div>
   );

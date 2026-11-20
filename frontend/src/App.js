@@ -8,6 +8,7 @@ import Overview from "./pages/dashboardPages/Overview";
 import PricesDemand from "./pages/dashboardPages/PricesDemand";
 import WeatherHarvest from "./pages/dashboardPages/WeatherHarvest";
 import Production from "./pages/dashboardPages/Production";
+import { LanguageProvider } from "./i18n/LanguageContext";
 import "./App.css";
 import farmBg from "./farm-bg.jpg";
 
@@ -23,35 +24,38 @@ function ProtectedRoute({ children }) {
 
 function App() {
   return (
-    <BrowserRouter>
-      <div
-        className="farm-background"
-        style={{
-          backgroundImage: `linear-gradient(rgba(20, 40, 20, 0.75), rgba(20, 40, 20, 0.75)), url(${farmBg})`
-        }}
-      >
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+    // LanguageProvider makes the chosen language (English / Gujarati) available to every page
+    <LanguageProvider>
+      <BrowserRouter>
+        <div
+          className="farm-background"
+          style={{
+            backgroundImage: `linear-gradient(rgba(20, 40, 20, 0.75), rgba(20, 40, 20, 0.75)), url(${farmBg})`
+          }}
+        >
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
 
-          {/* Dashboard is a layout; each tab is a nested route shown inside its <Outlet /> */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Overview />} />
-            <Route path="prices" element={<PricesDemand />} />
-            <Route path="weather" element={<WeatherHarvest />} />
-            <Route path="production" element={<Production />} />
-          </Route>
-        </Routes>
-      </div>
-    </BrowserRouter>
+            {/* Dashboard is a layout; each tab is a nested route shown inside its <Outlet /> */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Overview />} />
+              <Route path="prices" element={<PricesDemand />} />
+              <Route path="weather" element={<WeatherHarvest />} />
+              <Route path="production" element={<Production />} />
+            </Route>
+          </Routes>
+        </div>
+      </BrowserRouter>
+    </LanguageProvider>
   );
 }
 
